@@ -4,11 +4,9 @@ import React from 'react'
 const RootLayout = () => {
   return (
     <Stack>
-        <Stack.Screen name="Index"></Stack.Screen>
-        <Stack.Screen name="Profile"></Stack.Screen>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   )
 }
 
 export default RootLayout
-
