@@ -16,6 +16,12 @@ const TabsLayout = () => {
                 <Ionicons name="add" color={color} size={size} />
             ),
         }}></Tabs.Screen>
+        <Tabs.Screen name="analysis" options={{
+            title: 'KI-Analyse',
+            tabBarIcon: ({ color, size }) => (
+                <Ionicons name="sparkles" color={color} size={size} />
+            ),
+        }}></Tabs.Screen>
         <Tabs.Screen name="profile" options={{
             tabBarIcon: ({ color, size }) => (
                 <Ionicons name="person" color={color} size={size} />
