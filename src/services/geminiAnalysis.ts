@@ -24,7 +24,6 @@ export interface AnalysisResult {
 }
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY
-console.log('API Key geladen:', GEMINI_API_KEY ? 'JA' : 'UNDEFINED')
 
 export async function analyzeHealthData(input: AnalysisInput): Promise<AnalysisResult> {
   const { bloodTests, nutrition, supplements, training, profile } = input
@@ -44,10 +43,10 @@ ${profile.gender === 'female' ? `- Zyklusphase: ${profile.cyclePhase}` : ''}
 ${latestBloodTest ? Object.entries(latestBloodTest.values || {}).map(([key, val]: [string, any]) => `- ${key}: ${val.value} ${val.unit}`).join('\n') : 'Keine Blutwerte vorhanden'}
 
 ## Ernährung (letzte 7 Tage, ${nutrition.length} Einträge)
-${nutrition.slice(0, 10).map((n: any) => `- ${n.meal}: ${n.food} (${n.calories ?? '?'} kcal, P: ${n.protein ?? '?'}g, K: ${n.carbs ?? '?'}g, F: ${n.fat ?? '?'}g)`).join('\n') || 'Keine Ernährungsdaten'}
+${nutrition.slice(0, 10).map((n: any) => `- ${n.meal}: ${n.food} (${n.calories ?? '?'} kcal)`).join('\n') || 'Keine Ernährungsdaten'}
 
 ## Supplements (aktuell)
-${supplements.slice(0, 10).map((s: any) => `- ${s.name}: ${s.dose ?? '?'} ${s.unit} (${s.time})`).join('\n') || 'Keine Supplement-Daten'}
+${supplements.slice(0, 10).map((s: any) => `- ${s.name}: ${s.dose ?? '?'} ${s.unit ?? ''}`).join('\n') || 'Keine Supplement-Daten'}
 
 ## Training (letzte 7 Tage)
 ${training.slice(0, 7).map((t: any) => `- ${t.label}: ${t.duration} Min., ${t.intensity}`).join('\n') || 'Keine Trainingsdaten'}
@@ -60,11 +59,11 @@ Antworte NUR mit einem JSON-Objekt in diesem Format (kein Text davor oder danach
     {
       "name": "Wertname",
       "value": "Wert mit Einheit",
-      "assessment": "Kurze Erklärung was der Wert bedeutet und mögliche Ursachen"
+      "assessment": "Kurze Erklärung"
     }
   ],
   "nutritionInsights": "Analyse der Ernährung in 2-3 Sätzen",
-  "supplementRecommendations": "Supplement-Empfehlungen basierend auf den Blutwerten in 2-3 Sätzen",
+  "supplementRecommendations": "Supplement-Empfehlungen in 2-3 Sätzen",
   "trainingInsights": "Analyse des Trainings in 1-2 Sätzen",
   "overallScore": 75,
   "advice": [
@@ -73,13 +72,10 @@ Antworte NUR mit einem JSON-Objekt in diesem Format (kein Text davor oder danach
     "Konkreter Ratschlag 3"
   ]
 }
-
-overallScore ist eine Zahl von 0-100 die den allgemeinen Gesundheitszustand widerspiegelt.
-Sei ehrlich aber nicht alarmistisch. Weise darauf hin dass dies keine medizinische Diagnose ist.
 `
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -103,6 +99,9 @@ Sei ehrlich aber nicht alarmistisch. Weise darauf hin dass dies keine medizinisc
 
   if (!text) throw new Error('Keine Antwort von Gemini erhalten')
 
-  const clean = text.replace(/```json|```/g, '').trim()
-  return JSON.parse(clean) as AnalysisResult
+  // JSON aus der Antwort extrahieren — auch wenn Backticks oder Text drumherum
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error('Kein gültiges JSON in der Antwort gefunden')
+
+  return JSON.parse(jsonMatch[0]) as AnalysisResult
 }

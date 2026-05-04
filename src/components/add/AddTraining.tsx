@@ -6,6 +6,7 @@ import {
   TextInput, TouchableOpacity, View,
 } from 'react-native'
 import { db } from '../../config/firebase'
+import { useAuth } from '../../context/AuthContext'
 
 const TRAINING_TYPES = [
   { id: 'strength', label: '🏋️ Krafttraining' },
@@ -21,6 +22,7 @@ const TRAINING_TYPES = [
 const INTENSITIES = ['Leicht', 'Moderat', 'Intensiv', 'Maximal']
 
 export default function AddTraining({ onClose }: { onClose: () => void }) {
+  const { uid } = useAuth()
   const [type, setType] = useState('')
   const [duration, setDuration] = useState('')
   const [intensity, setIntensity] = useState('Moderat')
@@ -39,7 +41,7 @@ export default function AddTraining({ onClose }: { onClose: () => void }) {
     setSaving(true)
     try {
       const label = TRAINING_TYPES.find((t) => t.id === type)?.label ?? type
-      await addDoc(collection(db, 'training'), {
+      await addDoc(collection(db, 'users', uid!, 'training'), {
         type,
         label,
         duration: parseInt(duration),

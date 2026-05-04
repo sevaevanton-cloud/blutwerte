@@ -1,11 +1,12 @@
 // src/components/add/AddSupplement.tsx
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import React, { useState } from 'react'
+import { useState } from 'react'
 import {
   ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native'
 import { db } from '../../config/firebase'
+import { useAuth } from '../../context/AuthContext'
 
 const BRAND = '#84a7ff'
 
@@ -19,6 +20,7 @@ const UNITS = ['mg', 'µg', 'g', 'IE', 'ml', 'Kapsel(n)', 'Tablette(n)']
 const TIMES = ['Morgens', 'Mittags', 'Abends', 'Vor dem Training', 'Nach dem Training']
 
 export default function AddSupplement({ onClose }: { onClose: () => void }) {
+  const { uid } = useAuth()
   const [name, setName] = useState('')
   const [dose, setDose] = useState('')
   const [unit, setUnit] = useState('mg')
@@ -32,7 +34,7 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
     }
     setSaving(true)
     try {
-      await addDoc(collection(db, 'supplements'), {
+      await addDoc(collection(db, 'users', uid!, 'supplements'), {
         name: name.trim(),
         dose: dose ? parseFloat(dose) : null,
         unit,

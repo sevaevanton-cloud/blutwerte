@@ -2,15 +2,16 @@
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native'
 import { db } from '../../config/firebase'
+import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../context/ProfileContext'
 import { AnalysisResult, analyzeHealthData } from '../../services/geminiAnalysis'
 
@@ -28,6 +29,7 @@ function ScoreRing({ score }: { score: number }) {
 
 export default function Analysis() {
   const { profile } = useProfile()
+  const { uid } = useAuth()
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [lastAnalyzed, setLastAnalyzed] = useState<string | null>(null)
@@ -37,10 +39,10 @@ export default function Analysis() {
 
   const fetchData = async () => {
     const [bloodSnap, nutritionSnap, supplementSnap, trainingSnap] = await Promise.all([
-      getDocs(query(collection(db, 'bloodTests'), orderBy('createdAt', 'desc'), limit(3))),
-      getDocs(query(collection(db, 'nutrition'), orderBy('createdAt', 'desc'), limit(20))),
-      getDocs(query(collection(db, 'supplements'), orderBy('createdAt', 'desc'), limit(20))),
-      getDocs(query(collection(db, 'training'), orderBy('createdAt', 'desc'), limit(10))),
+      getDocs(query(collection(db, 'users', uid!, 'bloodTests'), orderBy('createdAt', 'desc'), limit(3))),
+      getDocs(query(collection(db, 'users', uid!, 'nutrition'), orderBy('createdAt', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'users', uid!, 'supplements'), orderBy('createdAt', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'users', uid!, 'training'), orderBy('createdAt', 'desc'), limit(10))),
     ])
 
     return {

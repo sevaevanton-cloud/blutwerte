@@ -3,22 +3,23 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { db } from '../../config/firebase';
 import {
-    BLOOD_VALUE_CATEGORIES,
-    BloodValue,
-    getValuesByCategory,
+  BLOOD_VALUE_CATEGORIES,
+  BloodValue,
+  getValuesByCategory,
 } from '../../constants/bloodValues';
+import { useAuth } from '../../context/AuthContext';
 import { useProfile } from '../../context/ProfileContext';
 
 const BRAND = '#84a7ff'
@@ -30,6 +31,7 @@ interface EnteredValue {
 
 export default function AddBloodValues({ onClose }: { onClose: () => void }) {
   const { profile } = useProfile()
+  const { uid } = useAuth()
   const [enteredValues, setEnteredValues] = useState<Record<string, EnteredValue>>({})
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [note, setNote] = useState('')
@@ -96,7 +98,7 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
           if (!isNaN(parsed)) values[id] = { value: parsed, unit: entry.unit }
         }
       })
-      await addDoc(collection(db, 'bloodTests'), {
+      await addDoc(collection(db, 'users', uid!, 'bloodTests'), {
         date,
         note: note.trim(),
         gender,
