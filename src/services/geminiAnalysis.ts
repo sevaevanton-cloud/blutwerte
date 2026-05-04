@@ -24,6 +24,7 @@ export interface AnalysisResult {
 }
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY
+console.log('API Key geladen:', GEMINI_API_KEY ? 'JA' : 'UNDEFINED')
 
 export async function analyzeHealthData(input: AnalysisInput): Promise<AnalysisResult> {
   const { bloodTests, nutrition, supplements, training, profile } = input
@@ -78,7 +79,7 @@ Sei ehrlich aber nicht alarmistisch. Weise darauf hin dass dies keine medizinisc
 `
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -93,7 +94,8 @@ Sei ehrlich aber nicht alarmistisch. Weise darauf hin dass dies keine medizinisc
   )
 
   if (!response.ok) {
-    throw new Error(`Gemini API Fehler: ${response.status}`)
+    const errorBody = await response.json()
+    throw new Error(`Gemini API Fehler: ${response.status} - ${JSON.stringify(errorBody)}`)
   }
 
   const data = await response.json()
