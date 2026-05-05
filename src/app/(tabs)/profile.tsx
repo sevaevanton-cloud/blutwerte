@@ -1,15 +1,14 @@
 // src/app/(tabs)/profile.tsx
+import { router } from 'expo-router'
 import React, { useState } from 'react'
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  Alert, ScrollView, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native'
-import { useProfile } from '../../context/ProfileContext'
+import { Gender, useProfile } from '../../context/ProfileContext'
+
+const BRAND = '#84a7ff'
+const BRAND_LIGHT = '#eef1ff'
 
 const CYCLE_PHASES = [
   { id: 'menstruation', label: '🔴 Menstruation', days: 'Tag 1–5' },
@@ -29,14 +28,8 @@ export default function Profile() {
   const [cycleDay, setCycleDay] = useState(profile.cycleDay?.toString() ?? '')
 
   const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert('Bitte gib deinen Namen ein.')
-      return
-    }
-    if (!gender) {
-      Alert.alert('Bitte wähle dein Geschlecht.')
-      return
-    }
+    if (!name.trim()) { Alert.alert('Bitte gib deinen Namen ein.'); return }
+    if (!gender) { Alert.alert('Bitte wähle dein Geschlecht.'); return }
     updateProfile({
       name: name.trim(),
       gender,
@@ -47,55 +40,88 @@ export default function Profile() {
     Alert.alert('✅ Profil gespeichert!')
   }
 
+  const handleReset = () => {
+    Alert.alert(
+      'Profil zurücksetzen?',
+      'Du wirst zum Onboarding weitergeleitet. Deine eingetragenen Daten bleiben erhalten.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Zurücksetzen',
+          style: 'destructive',
+          onPress: async () => {
+            await updateProfile({
+              name: '',
+              gender: null,
+              birthYear: null,
+              cyclePhase: 'unknown',
+              cycleDay: null,
+              isProfileComplete: false,
+            })
+            router.replace('/onboarding')
+          },
+        },
+      ]
+    )
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Mein Profil</Text>
-      <Text style={styles.subtitle}>
-        Deine Angaben helfen uns, die richtigen Referenzwerte anzuzeigen.
-      </Text>
+      <Text style={styles.subtitle}>Deine Angaben helfen uns, die richtigen Referenzwerte anzuzeigen.</Text>
+
+      {/* Avatar */}
+      <View style={styles.avatarContainer}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{name ? name[0].toUpperCase() : '?'}</Text>
+        </View>
+        {profile.isProfileComplete && (
+          <View style={styles.completeBadge}>
+            <Text style={styles.completeBadgeText}>✅ Profil vollständig</Text>
+          </View>
+        )}
+      </View>
 
       {/* Name */}
-      <View style={styles.section}>
+      <View style={styles.card}>
         <Text style={styles.label}>Name</Text>
         <TextInput
           style={styles.input}
           value={name}
           onChangeText={setName}
           placeholder="Dein Name"
-          placeholderTextColor="#555"
+          placeholderTextColor="#9ca3af"
         />
       </View>
 
       {/* Geburtsjahr */}
-      <View style={styles.section}>
+      <View style={styles.card}>
         <Text style={styles.label}>Geburtsjahr</Text>
         <TextInput
           style={styles.input}
           value={birthYear}
           onChangeText={setBirthYear}
           placeholder="z.B. 1990"
-          placeholderTextColor="#555"
+          placeholderTextColor="#9ca3af"
           keyboardType="number-pad"
           maxLength={4}
         />
       </View>
 
       {/* Geschlecht */}
-      <View style={styles.section}>
+      <View style={styles.card}>
         <Text style={styles.label}>Biologisches Geschlecht</Text>
-        <Text style={styles.hint}>
-          Wird für die Referenzwerte benötigt
-        </Text>
+        <Text style={styles.hint}>Wird für die Referenzwerte benötigt</Text>
         <View style={styles.row}>
           {[
             { id: 'male', label: '♂ Männlich' },
             { id: 'female', label: '♀ Weiblich' },
             { id: 'diverse', label: '⚧ Divers' },
-          ].map((g) => (
+          ].map(g => (
             <TouchableOpacity
               key={g.id}
               style={[styles.chip, gender === g.id && styles.chipActive]}
-              onPress={() => setGender(g.id as any)}
+              onPress={() => setGender(g.id as Gender)}
             >
               <Text style={[styles.chipText, gender === g.id && styles.chipTextActive]}>
                 {g.label}
@@ -105,14 +131,12 @@ export default function Profile() {
         </View>
       </View>
 
-      {/* Zyklusphase – nur für Frauen */}
+      {/* Zyklusphase */}
       {gender === 'female' && (
-        <View style={styles.section}>
+        <View style={styles.card}>
           <Text style={styles.label}>Aktuelle Zyklusphase</Text>
-          <Text style={styles.hint}>
-            Beeinflusst Referenzwerte für Östrogen, Progesteron, LH, FSH u.a.
-          </Text>
-          {CYCLE_PHASES.map((phase) => (
+          <Text style={styles.hint}>Beeinflusst Referenzwerte für Östrogen, Progesteron, LH, FSH u.a.</Text>
+          {CYCLE_PHASES.map(phase => (
             <TouchableOpacity
               key={phase.id}
               style={[styles.phaseRow, cyclePhase === phase.id && styles.phaseRowActive]}
@@ -121,9 +145,7 @@ export default function Profile() {
               <Text style={[styles.phaseLabel, cyclePhase === phase.id && styles.phaseLabelActive]}>
                 {phase.label}
               </Text>
-              {phase.days ? (
-                <Text style={styles.phaseDays}>{phase.days}</Text>
-              ) : null}
+              {phase.days ? <Text style={styles.phaseDays}>{phase.days}</Text> : null}
             </TouchableOpacity>
           ))}
 
@@ -133,7 +155,7 @@ export default function Profile() {
             value={cycleDay}
             onChangeText={setCycleDay}
             placeholder="z.B. 14"
-            placeholderTextColor="#555"
+            placeholderTextColor="#9ca3af"
             keyboardType="number-pad"
             maxLength={2}
           />
@@ -144,79 +166,48 @@ export default function Profile() {
         <Text style={styles.saveButtonText}>Profil speichern</Text>
       </TouchableOpacity>
 
-      {profile.isProfileComplete && (
-        <View style={styles.savedBadge}>
-          <Text style={styles.savedBadgeText}>✅ Profil vollständig</Text>
-        </View>
-      )}
+      {/* Reset */}
+      <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+        <Text style={styles.resetButtonText}>↩ Onboarding neu starten</Text>
+      </TouchableOpacity>
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingBottom: 60 },
-  title: { fontSize: 28, fontWeight: '800', color: '#fff', marginBottom: 6 },
-  subtitle: { fontSize: 13, color: '#666', marginBottom: 24, lineHeight: 18 },
-  section: { marginBottom: 24 },
-  label: { fontSize: 14, fontWeight: '600', color: '#aaa', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.8 },
-  hint: { fontSize: 12, color: '#555', marginBottom: 10 },
-  input: {
-    backgroundColor: '#1a1a1a',
-    color: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
+  container: { flex: 1, backgroundColor: '#f7f8fc' },
+  content: { padding: 20, paddingBottom: 100 },
+
+  title: { fontSize: 26, fontWeight: '800', color: '#1a1a2e', letterSpacing: -0.5 },
+  subtitle: { fontSize: 14, color: '#9ca3af', marginTop: 4, marginBottom: 24, lineHeight: 20 },
+
+  avatarContainer: { alignItems: 'center', marginBottom: 24, gap: 12 },
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center', shadowColor: BRAND, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  avatarText: { color: '#fff', fontSize: 32, fontWeight: '800' },
+  completeBadge: { backgroundColor: '#f0fdf4', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: '#bbf7d0' },
+  completeBadgeText: { color: '#16a34a', fontSize: 13, fontWeight: '600' },
+
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 14, shadowColor: '#84a7ff', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
+  label: { fontSize: 12, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  hint: { fontSize: 12, color: '#9ca3af', marginBottom: 12, lineHeight: 17 },
+
+  input: { backgroundColor: '#f7f8fc', color: '#1a1a2e', borderRadius: 10, padding: 14, fontSize: 16, borderWidth: 1.5, borderColor: '#e5e7eb' },
+
   row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  chipActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  chipText: { color: '#888', fontSize: 14, fontWeight: '500' },
-  chipTextActive: { color: '#fff' },
-  phaseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  phaseRowActive: { borderColor: '#2563eb', backgroundColor: '#1a2a4a' },
-  phaseLabel: { fontSize: 15, color: '#aaa', fontWeight: '500' },
-  phaseLabelActive: { color: '#fff' },
-  phaseDays: { fontSize: 12, color: '#555' },
-  saveButton: {
-    backgroundColor: '#2563eb',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
+  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#f7f8fc', borderWidth: 1.5, borderColor: '#e5e7eb' },
+  chipActive: { backgroundColor: BRAND_LIGHT, borderColor: BRAND },
+  chipText: { color: '#6b7280', fontSize: 14, fontWeight: '600' },
+  chipTextActive: { color: BRAND },
+
+  phaseRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f7f8fc', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: '#e5e7eb' },
+  phaseRowActive: { borderColor: BRAND, backgroundColor: BRAND_LIGHT },
+  phaseLabel: { fontSize: 15, color: '#6b7280', fontWeight: '500' },
+  phaseLabelActive: { color: BRAND, fontWeight: '700' },
+  phaseDays: { fontSize: 12, color: '#9ca3af' },
+
+  saveButton: { backgroundColor: BRAND, padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 8, shadowColor: BRAND, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 6 },
   saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  savedBadge: {
-    marginTop: 16,
-    backgroundColor: '#0a2a1a',
-    borderRadius: 10,
-    padding: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1a5a3a',
-  },
-  savedBadgeText: { color: '#4ade80', fontSize: 14, fontWeight: '600' },
+
+  resetButton: { marginTop: 16, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#e5e7eb' },
+  resetButtonText: { color: '#9ca3af', fontSize: 14, fontWeight: '600' },
 })
