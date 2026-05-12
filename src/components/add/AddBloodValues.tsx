@@ -1,5 +1,7 @@
 // src/components/add/AddBloodValues.tsx
 'use no memo';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
@@ -21,6 +23,7 @@ import {
 } from '../../constants/bloodValues';
 import { useAuth } from '../../context/AuthContext';
 import { useProfile } from '../../context/ProfileContext';
+import { scanBloodDocument } from '../../services/geminiScan';
 
 const BRAND = '#84a7ff'
 
@@ -29,6 +32,62 @@ interface EnteredValue {
   unit: string
 }
 
+// ── Scan-Banner ────────────────────────────────────────────────────
+function ScanBanner({
+  onScanCamera,
+  onScanGallery,
+  scanning,
+  scanResult,
+}: {
+  onScanCamera: () => void
+  onScanGallery: () => void
+  scanning: boolean
+  scanResult: { count: number; confidence: string } | null
+}) {
+  return (
+    <View style={scanStyles.container}>
+      <View style={scanStyles.header}>
+        <View>
+          <Text style={scanStyles.title}>📸 Laborbefund scannen</Text>
+          <Text style={scanStyles.subtitle}>KI liest deine Werte automatisch aus</Text>
+        </View>
+        {scanResult && (
+          <View style={scanStyles.badge}>
+            <Text style={scanStyles.badgeText}>✓ {scanResult.count} erkannt</Text>
+          </View>
+        )}
+      </View>
+
+      {scanning ? (
+        <View style={scanStyles.loadingRow}>
+          <ActivityIndicator color={BRAND} size="small" />
+          <Text style={scanStyles.loadingText}>KI analysiert Befund...</Text>
+        </View>
+      ) : (
+        <View style={scanStyles.btnRow}>
+          <TouchableOpacity style={scanStyles.btn} onPress={onScanCamera}>
+            <Text style={scanStyles.btnIcon}>📷</Text>
+            <Text style={scanStyles.btnText}>Kamera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={scanStyles.btn} onPress={onScanGallery}>
+            <Text style={scanStyles.btnIcon}>🖼️</Text>
+            <Text style={scanStyles.btnText}>Galerie</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {scanResult && (
+        <Text style={scanStyles.hint}>
+          {scanResult.confidence === 'high'
+            ? '✅ Hohe Erkennungsgenauigkeit – bitte trotzdem kurz prüfen'
+            : '⚠️ Bitte alle Werte überprüfen und ggf. korrigieren'}
+        </Text>
+      )}
+    </View>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────
 export default function AddBloodValues({ onClose }: { onClose: () => void }) {
   const { profile } = useProfile()
   const { uid } = useAuth()
@@ -36,6 +95,8 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<{ count: number; confidence: string } | null>(null)
   const [unitPickerFor, setUnitPickerFor] = useState<BloodValue | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(
     { '🩸 Blutbild': true }
@@ -44,6 +105,88 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
   const gender = profile.gender ?? 'male'
   const valuesByCategory = useMemo(() => getValuesByCategory(gender), [gender])
   const filledCount = Object.values(enteredValues).filter((v) => v.value.trim() !== '').length
+
+  // ── Scan-Logik ──────────────────────────────────────────────────
+
+  const handleScan = async (source: 'camera' | 'gallery') => {
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync()
+      if (status !== 'granted') {
+        Alert.alert('Keine Berechtigung', 'Kamera-Zugriff ist erforderlich.')
+        return
+      }
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 1,
+          allowsEditing: true,
+          aspect: [3, 4],
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 1,
+        })
+
+    if (result.canceled || !result.assets?.[0]) return
+
+    const asset = result.assets[0]
+
+    setScanning(true)
+    try {
+      // Bild auf max. 1000px verkleinern – reduziert ~3MB auf ~150KB
+      const compressed = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1000 } }],
+        {
+          compress: 0.5,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        }
+      )
+
+      if (!compressed.base64) {
+        throw new Error('Bild konnte nicht komprimiert werden')
+      }
+
+      const scan = await scanBloodDocument(compressed.base64, 'image/jpeg')
+
+      if (scan.detectedCount === 0) {
+        Alert.alert(
+          'Keine Werte erkannt',
+          'Gemini konnte keine Laborwerte im Bild finden.\n\nTipps:\n• Gutes Licht verwenden\n• Dokument gerade halten\n• Ganzen Befund abfotografieren'
+        )
+        return
+      }
+
+      setEnteredValues(prev => ({ ...prev, ...scan.extractedValues }))
+      expandCategoriesForValues(Object.keys(scan.extractedValues))
+      setScanResult({ count: scan.detectedCount, confidence: scan.confidence })
+
+      Alert.alert(
+        `✅ ${scan.detectedCount} Werte erkannt`,
+        'Die Felder wurden automatisch ausgefüllt.\nBitte kontrolliere und ergänze die Werte.'
+      )
+    } catch (e: any) {
+      Alert.alert('Scan fehlgeschlagen', e.message ?? 'Unbekannter Fehler')
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const expandCategoriesForValues = (valueIds: string[]) => {
+    const updates: Record<string, boolean> = {}
+    BLOOD_VALUE_CATEGORIES.forEach(cat => {
+      const values = valuesByCategory[cat]
+      if (values?.some(bv => valueIds.includes(bv.id))) {
+        updates[cat] = true
+      }
+    })
+    setExpandedCategories(prev => ({ ...prev, ...updates }))
+  }
+
+  // ── Bestehende Handlers ─────────────────────────────────────────
 
   const handleValueChange = (id: string, text: string, defaultUnit: string) => {
     setEnteredValues((prev) => ({
@@ -104,6 +247,7 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
         gender,
         cyclePhase: profile.cyclePhase,
         values,
+        scannedByAI: scanResult !== null,
         createdAt: serverTimestamp(),
       })
       Alert.alert('✅ Gespeichert!', `${Object.keys(values).length} Wert(e) gespeichert.`)
@@ -115,10 +259,19 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // ── Render ──────────────────────────────────────────────────────
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Datum */}
+
+        <ScanBanner
+          onScanCamera={() => handleScan('camera')}
+          onScanGallery={() => handleScan('gallery')}
+          scanning={scanning}
+          scanResult={scanResult}
+        />
+
         <View style={styles.section}>
           <Text style={styles.label}>📅 Datum der Blutabnahme</Text>
           <TextInput
@@ -130,11 +283,11 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
           />
         </View>
 
-        {/* Kategorien */}
         {BLOOD_VALUE_CATEGORIES.map((category) => {
           const values = valuesByCategory[category]
           if (!values || values.length === 0) return null
           const isExpanded = expandedCategories[category] ?? false
+          const filledInCategory = values.filter(bv => enteredValues[bv.id]?.value.trim()).length
 
           return (
             <View key={category} style={styles.categoryBlock}>
@@ -143,7 +296,14 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
                 onPress={() => toggleCategory(category)}
               >
                 <Text style={styles.categoryTitle}>{category}</Text>
-                <Text style={styles.chevron}>{isExpanded ? '▲' : '▼'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {filledInCategory > 0 && (
+                    <View style={styles.filledBadge}>
+                      <Text style={styles.filledBadgeText}>{filledInCategory}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.chevron}>{isExpanded ? '▲' : '▼'}</Text>
+                </View>
               </TouchableOpacity>
 
               {isExpanded && (
@@ -154,13 +314,19 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
                     const currentValue = entry?.value ?? ''
                     const refLabel = getReferenceLabel(bv)
                     const valueColor = getValueColor(bv, currentValue)
+                    const wasScanned = scanResult && entry?.value
 
                     return (
                       <View key={bv.id} style={styles.valueRow}>
                         <View style={styles.valueMeta}>
-                          <Text style={styles.valueName}>
-                            {bv.name}{bv.cycleDependent ? ' 🔄' : ''}
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={styles.valueName}>
+                              {bv.name}{bv.cycleDependent ? ' 🔄' : ''}
+                            </Text>
+                            {wasScanned && (
+                              <Text style={styles.scannedDot}>●</Text>
+                            )}
+                          </View>
                           {refLabel && (
                             <Text style={styles.refLabel}>
                               Ref: {refLabel} {currentUnit}
@@ -196,7 +362,6 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
           )
         })}
 
-        {/* Notiz */}
         <View style={styles.section}>
           <Text style={styles.label}>📝 Notiz</Text>
           <TextInput
@@ -210,7 +375,6 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
         </View>
       </ScrollView>
 
-      {/* Save Button */}
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.saveBtn, filledCount === 0 && styles.saveBtnDisabled]}
@@ -229,7 +393,6 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
         </TouchableOpacity>
       </View>
 
-      {/* Unit Picker */}
       <Modal visible={!!unitPickerFor} transparent animationType="slide">
         <TouchableOpacity style={styles.overlay} onPress={() => setUnitPickerFor(null)}>
           <View style={styles.sheet}>
@@ -250,6 +413,54 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
     </View>
   )
 }
+
+const scanStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#eef1ff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#d4dcff',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  title: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
+  subtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  badge: {
+    backgroundColor: '#34d399',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  badgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  btn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: BRAND,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  btnIcon: { fontSize: 16 },
+  btnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  loadingText: { fontSize: 14, color: '#6b7280' },
+  hint: { fontSize: 11, color: '#6b7280', marginTop: 10, lineHeight: 16 },
+})
 
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 100 },
@@ -277,6 +488,16 @@ const styles = StyleSheet.create({
   },
   categoryTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
   chevron: { fontSize: 12, color: '#9ca3af' },
+  filledBadge: {
+    backgroundColor: BRAND,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  filledBadgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
   valuesList: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -296,6 +517,7 @@ const styles = StyleSheet.create({
   },
   valueMeta: { flex: 1, marginRight: 10 },
   valueName: { fontSize: 14, color: '#1a1a2e', fontWeight: '500' },
+  scannedDot: { fontSize: 8, color: BRAND },
   refLabel: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   valueInput: {
