@@ -1,4 +1,8 @@
 // src/services/geminiAnalysis.ts
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import { app } from '../config/firebase'
+
+const functions = getFunctions(app, 'europe-west1')
 
 export interface AnalysisInput {
   bloodTests: any[]
@@ -23,8 +27,6 @@ export interface AnalysisResult {
   advice: string[]
 }
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY
-
 export async function analyzeHealthData(input: AnalysisInput): Promise<AnalysisResult> {
   const { bloodTests, nutrition, supplements, training, profile } = input
 
@@ -48,42 +50,12 @@ TRAINING: ${training.slice(0, 5).map((t: any) => `${t.label} ${t.duration}min`).
 Antworte NUR mit diesem JSON (keine anderen Zeichen):
 {"summary":"...","abnormalValues":[{"name":"...","value":"...","assessment":"..."}],"nutritionInsights":"...","supplementRecommendations":"...","trainingInsights":"...","overallScore":75,"advice":["...","...","..."]}`
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 8192,
-          responseMimeType: 'application/json',
-        },
-      }),
-    }
-  )
+  const callAnalyze = httpsCallable(functions, 'analyzeHealthData')
+  const result = await callAnalyze({ prompt })
 
-  if (!response.ok) {
-    const errorBody = await response.json()
-    throw new Error(`Gemini API Fehler: ${response.status} - ${JSON.stringify(errorBody)}`)
-  }
-
-  const data = await response.json()
-  console.log('Gemini raw response:', JSON.stringify(data).substring(0, 500))
-
+  const data = result.data as any
   const parts = data.candidates?.[0]?.content?.parts ?? []
-  console.log('Parts count:', parts.length)
-  parts.forEach((p: any, i: number) => {
-    console.log(`Part ${i} keys:`, Object.keys(p), '| text preview:', p.text?.substring(0, 100))
-  })
-
-  const fullText = parts
-    .filter((p: any) => p.text)
-    .map((p: any) => p.text)
-    .join('')
-
-  console.log('Full text preview:', fullText.substring(0, 300))
+  const fullText = parts.filter((p: any) => p.text).map((p: any) => p.text).join('')
 
   if (!fullText) throw new Error('Keine Antwort von Gemini erhalten')
 
@@ -92,8 +64,7 @@ Antworte NUR mit diesem JSON (keine anderen Zeichen):
 
   try {
     return JSON.parse(jsonMatch[0]) as AnalysisResult
-  } catch (e) {
-    console.log('Parse error:', e, '| JSON attempt:', jsonMatch[0].substring(0, 200))
+  } catch {
     throw new Error('JSON konnte nicht geparst werden')
   }
 }
