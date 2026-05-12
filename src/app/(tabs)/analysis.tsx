@@ -34,9 +34,6 @@ export default function Analysis() {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [lastAnalyzed, setLastAnalyzed] = useState<string | null>(null)
 
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
   const fetchData = async () => {
     const [bloodSnap, nutritionSnap, supplementSnap, trainingSnap] = await Promise.all([
       getDocs(query(collection(db, 'users', uid!, 'bloodTests'), orderBy('createdAt', 'desc'), limit(3))),
@@ -53,7 +50,7 @@ export default function Analysis() {
     }
   }
 
-  const handleAnalyze = async () => {
+  const runAnalysis = async () => {
     setLoading(true)
     try {
       const data = await fetchData()
@@ -69,7 +66,7 @@ export default function Analysis() {
       const analysisResult = await analyzeHealthData({
         ...data,
         profile: {
-          name: profile.name,
+          // Name wird NICHT übermittelt (Pseudonymisierung)
           gender: profile.gender,
           birthYear: profile.birthYear,
           cyclePhase: profile.cyclePhase,
@@ -83,6 +80,18 @@ export default function Analysis() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Datenschutz-Hinweis vor der Analyse anzeigen
+  const handleAnalyze = () => {
+    Alert.alert(
+      '🔒 Datenweitergabe an Google',
+      'Für die KI-Analyse werden deine Blutwerte, Ernährung, Supplements, Training sowie Alter und Geschlecht an die Google Gemini API übermittelt.\n\nDein Name wird nicht übertragen.\n\nMöchtest du fortfahren?',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        { text: 'Analyse starten', style: 'default', onPress: runAnalysis },
+      ]
+    )
   }
 
   return (

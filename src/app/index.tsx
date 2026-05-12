@@ -1,11 +1,20 @@
+// src/app/index.tsx
 import { Redirect } from 'expo-router'
+import { useConsent } from '../context/ConsentContext'
 import { useProfile } from '../context/ProfileContext'
 
 export default function Index() {
-  const { profile, isLoading } = useProfile()
+  const { consentGiven, isLoading: consentLoading } = useConsent()
+  const { profile, isLoading: profileLoading } = useProfile()
 
-  if (isLoading) return null
+  if (consentLoading || profileLoading) return null
 
+  // Erst Consent prüfen
+  if (!consentGiven) {
+    return <Redirect href="/consent" />
+  }
+
+  // Dann Profil prüfen
   if (!profile.isProfileComplete) {
     return <Redirect href="/onboarding" />
   }

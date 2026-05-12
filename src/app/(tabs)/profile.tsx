@@ -1,10 +1,15 @@
 // src/app/(tabs)/profile.tsx
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
+import { collection, deleteDoc, getDocs } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
   Alert, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native'
+import { db } from '../../config/firebase'
+import { useAuth } from '../../context/AuthContext'
+import { useConsent } from '../../context/ConsentContext'
 import { Gender, useProfile } from '../../context/ProfileContext'
 
 const BRAND = '#84a7ff'
@@ -18,14 +23,19 @@ const CYCLE_PHASES = [
   { id: 'unknown', label: '❓ Unbekannt', days: '' },
 ]
 
+const COLLECTIONS = ['bloodTests', 'nutrition', 'supplements', 'training']
+
 export default function Profile() {
   const { profile, updateProfile } = useProfile()
+  const { uid } = useAuth()
+  const { revokeConsent } = useConsent()
 
   const [name, setName] = useState(profile.name)
   const [gender, setGender] = useState(profile.gender)
   const [birthYear, setBirthYear] = useState(profile.birthYear?.toString() ?? '')
   const [cyclePhase, setCyclePhase] = useState(profile.cyclePhase)
   const [cycleDay, setCycleDay] = useState(profile.cycleDay?.toString() ?? '')
+  const [deleting, setDeleting] = useState(false)
 
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Bitte gib deinen Namen ein.'); return }
@@ -63,6 +73,89 @@ export default function Profile() {
         },
       ]
     )
+  }
+
+  // Einwilligung widerrufen
+  const handleRevokeConsent = () => {
+    Alert.alert(
+      'Einwilligung widerrufen?',
+      'Du wirst zum Datenschutz-Bildschirm weitergeleitet. Die App kann ohne Einwilligung nicht genutzt werden. Deine gespeicherten Daten bleiben erhalten.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Widerrufen',
+          style: 'destructive',
+          onPress: async () => {
+            await revokeConsent()
+            router.replace('/consent')
+          },
+        },
+      ]
+    )
+  }
+
+  // Alle Daten löschen
+  const handleDeleteAllData = () => {
+    Alert.alert(
+      '⚠️ Alle Daten löschen?',
+      'Dieser Vorgang löscht unwiderruflich alle deine Blutwerte, Ernährungseinträge, Supplements, Training und Profildaten. Diese Aktion kann nicht rückgängig gemacht werden.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Endgültig löschen',
+          style: 'destructive',
+          onPress: () => {
+            // Zweite Bestätigung
+            Alert.alert(
+              'Wirklich alle Daten löschen?',
+              'Letzte Warnung: Alle Daten werden permanent gelöscht.',
+              [
+                { text: 'Abbrechen', style: 'cancel' },
+                {
+                  text: 'Ja, alles löschen',
+                  style: 'destructive',
+                  onPress: deleteAllData,
+                },
+              ]
+            )
+          },
+        },
+      ]
+    )
+  }
+
+  const deleteAllData = async () => {
+    if (!uid) return
+    setDeleting(true)
+    try {
+      // Alle Firestore-Collections löschen
+      for (const col of COLLECTIONS) {
+        const snap = await getDocs(collection(db, 'users', uid, col))
+        await Promise.all(snap.docs.map(doc => deleteDoc(doc.ref)))
+      }
+
+      // AsyncStorage löschen (Profil + Consent)
+      await AsyncStorage.multiRemove(['userProfile', 'datenschutz_einwilligung_v1'])
+
+      // Profil im State zurücksetzen
+      await updateProfile({
+        name: '',
+        gender: null,
+        birthYear: null,
+        cyclePhase: 'unknown',
+        cycleDay: null,
+        isProfileComplete: false,
+      })
+
+      // Einwilligung widerrufen und zum Consent-Screen
+      await revokeConsent()
+      router.replace('/consent')
+    } catch (e) {
+      Alert.alert('Fehler', 'Daten konnten nicht vollständig gelöscht werden. Bitte versuche es erneut.')
+      console.error('Daten löschen fehlgeschlagen:', e)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -170,6 +263,42 @@ export default function Profile() {
       <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
         <Text style={styles.resetButtonText}>↩ Onboarding neu starten</Text>
       </TouchableOpacity>
+
+      {/* ── Datenschutz-Bereich ───────────────────────────── */}
+      <View style={styles.sectionDivider}>
+        <Text style={styles.sectionDividerText}>Datenschutz & Daten</Text>
+      </View>
+
+      {/* Einwilligung widerrufen */}
+      <TouchableOpacity style={styles.privacyButton} onPress={handleRevokeConsent}>
+        <View style={styles.privacyButtonIcon}>
+          <Text>🔒</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.privacyButtonTitle}>Einwilligung widerrufen</Text>
+          <Text style={styles.privacyButtonDesc}>Datenschutzerklärung erneut anzeigen</Text>
+        </View>
+        <Text style={styles.privacyArrow}>›</Text>
+      </TouchableOpacity>
+
+      {/* Alle Daten löschen */}
+      <TouchableOpacity
+        style={[styles.deleteButton, deleting && { opacity: 0.6 }]}
+        onPress={handleDeleteAllData}
+        disabled={deleting}
+      >
+        <View style={styles.deleteButtonIcon}>
+          <Text>🗑️</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.deleteButtonTitle}>
+            {deleting ? 'Wird gelöscht...' : 'Alle Daten löschen'}
+          </Text>
+          <Text style={styles.deleteButtonDesc}>Blutwerte, Ernährung, Profil – unwiderruflich</Text>
+        </View>
+        <Text style={styles.privacyArrow}>›</Text>
+      </TouchableOpacity>
+
     </ScrollView>
   )
 }
@@ -210,4 +339,18 @@ const styles = StyleSheet.create({
 
   resetButton: { marginTop: 16, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#e5e7eb' },
   resetButtonText: { color: '#9ca3af', fontSize: 14, fontWeight: '600' },
+
+  sectionDivider: { marginTop: 32, marginBottom: 14 },
+  sectionDividerText: { fontSize: 12, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8 },
+
+  privacyButton: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: '#e5e7eb' },
+  privacyButtonIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: BRAND_LIGHT, alignItems: 'center', justifyContent: 'center' },
+  privacyButtonTitle: { fontSize: 14, fontWeight: '600', color: '#1a1a2e' },
+  privacyButtonDesc: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  privacyArrow: { fontSize: 20, color: '#9ca3af' },
+
+  deleteButton: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff5f5', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: '#fecaca' },
+  deleteButtonIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' },
+  deleteButtonTitle: { fontSize: 14, fontWeight: '600', color: '#dc2626' },
+  deleteButtonDesc: { fontSize: 12, color: '#f87171', marginTop: 2 },
 })
