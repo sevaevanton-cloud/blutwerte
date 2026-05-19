@@ -4,8 +4,13 @@ import { initializeApp } from 'firebase/app'
 import { Auth, getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
+const apiKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY
+if (!apiKey) {
+  throw new Error('EXPO_PUBLIC_FIREBASE_API_KEY ist nicht gesetzt. Bitte .env prüfen.')
+}
+
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyC0797C5mvQigWkkqVcnFlCaIOqG1RfQzQ",
+  apiKey,
   authDomain: "blutwerte-app.firebaseapp.com",
   projectId: "blutwerte-app",
   storageBucket: "blutwerte-app.firebasestorage.app",

@@ -1,6 +1,6 @@
 // src/app/(tabs)/analysis.tsx
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore'
-import React, { useState } from 'react'
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
+import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -10,12 +10,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { db } from '../../config/firebase'
+import { BRAND } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../context/ProfileContext'
 import { AnalysisResult, analyzeHealthData } from '../../services/geminiAnalysis'
 
-const BRAND = '#84a7ff'
 
 function ScoreRing({ score }: { score: number }) {
   const color = score >= 70 ? '#34d399' : score >= 40 ? '#fbbf24' : '#f87171'
@@ -31,8 +32,32 @@ export default function Analysis() {
   const { profile } = useProfile()
   const { uid } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [cacheLoading, setCacheLoading] = useState(true)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [lastAnalyzed, setLastAnalyzed] = useState<string | null>(null)
+
+  // Cache beim Öffnen laden
+  useEffect(() => {
+    if (!uid) return
+    const loadCache = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid, 'analysisCache', 'latest'))
+        if (snap.exists()) {
+          const data = snap.data()
+          setResult(data.result as AnalysisResult)
+          setLastAnalyzed(data.analyzedAt ?? null)
+        }
+      } catch (e) {
+        // Cache nicht verfügbar – kein Problem
+      } finally {
+        setCacheLoading(false)
+      }
+    }
+    loadCache()
+  }, [uid])
+
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
   const fetchData = async () => {
     const [bloodSnap, nutritionSnap, supplementSnap, trainingSnap] = await Promise.all([
@@ -50,7 +75,7 @@ export default function Analysis() {
     }
   }
 
-  const runAnalysis = async () => {
+  const handleAnalyze = async () => {
     setLoading(true)
     try {
       const data = await fetchData()
@@ -66,15 +91,24 @@ export default function Analysis() {
       const analysisResult = await analyzeHealthData({
         ...data,
         profile: {
-          // Name wird NICHT übermittelt (Pseudonymisierung)
+          name: profile.name,
           gender: profile.gender,
           birthYear: profile.birthYear,
           cyclePhase: profile.cyclePhase,
         },
       })
 
+      const analyzedAt = new Date().toLocaleString('de-DE')
       setResult(analysisResult)
-      setLastAnalyzed(new Date().toLocaleString('de-DE'))
+      setLastAnalyzed(analyzedAt)
+
+      // In Firestore cachen
+      if (uid) {
+        await setDoc(doc(db, 'users', uid, 'analysisCache', 'latest'), {
+          result: analysisResult,
+          analyzedAt,
+        })
+      }
     } catch (e: any) {
       Alert.alert('Fehler', `Analyse fehlgeschlagen: ${e.message}`)
     } finally {
@@ -82,19 +116,8 @@ export default function Analysis() {
     }
   }
 
-  // Datenschutz-Hinweis vor der Analyse anzeigen
-  const handleAnalyze = () => {
-    Alert.alert(
-      '🔒 Datenweitergabe an Google',
-      'Für die KI-Analyse werden deine Blutwerte, Ernährung, Supplements, Training sowie Alter und Geschlecht an die Google Gemini API übermittelt.\n\nDein Name wird nicht übertragen.\n\nMöchtest du fortfahren?',
-      [
-        { text: 'Abbrechen', style: 'cancel' },
-        { text: 'Analyse starten', style: 'default', onPress: runAnalysis },
-      ]
-    )
-  }
-
   return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f8fc' }} edges={['top']}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>🤖 KI-Analyse</Text>
       <Text style={styles.subtitle}>
@@ -197,7 +220,7 @@ export default function Analysis() {
       )}
 
       {/* Leerer Zustand */}
-      {!result && !loading && (
+      {!result && !loading && !cacheLoading && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>🔬</Text>
           <Text style={styles.emptyTitle}>Bereit für deine Analyse</Text>
@@ -206,7 +229,16 @@ export default function Analysis() {
           </Text>
         </View>
       )}
+
+      {/* Cache wird geladen */}
+      {cacheLoading && (
+        <View style={styles.emptyState}>
+          <ActivityIndicator color={BRAND} size="large" />
+          <Text style={[styles.emptyText, { marginTop: 12 }]}>Letzte Analyse wird geladen...</Text>
+        </View>
+      )}
     </ScrollView>
+    </SafeAreaView>
   )
 }
 

@@ -7,10 +7,9 @@ import {
 } from 'react-native'
 import { db } from '../../config/firebase'
 import { LocalFood, searchLocalFoods } from '../../constants/foodDatabase'
+import { BRAND, BRAND_LIGHT } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
 
-const BRAND = '#84a7ff'
-const BRAND_LIGHT = '#eef1ff'
 
 const MEALS = ['Frühstück', 'Mittagessen', 'Abendessen', 'Snack']
 
@@ -22,6 +21,7 @@ interface FoodResult {
   protein: number
   carbs: number
   fat: number
+  fiber?: number
   isLocal?: boolean
 }
 
@@ -93,6 +93,7 @@ export default function AddNutrition({ onClose }: { onClose: () => void }) {
             protein: Math.round((p.nutriments['proteins_100g'] ?? 0) * 10) / 10,
             carbs: Math.round((p.nutriments['carbohydrates_100g'] ?? 0) * 10) / 10,
             fat: Math.round((p.nutriments['fat_100g'] ?? 0) * 10) / 10,
+            fiber: Math.round((p.nutriments['fiber_100g'] ?? 0) * 10) / 10,
             isLocal: false,
           }))
 
@@ -118,10 +119,11 @@ export default function AddNutrition({ onClose }: { onClose: () => void }) {
   }
 
   const calcMacros = (food: FoodResult, portion: number) => ({
-    kcal: Math.round((food.kcal * portion) / 100),
-    protein: Math.round((food.protein * portion) / 100 * 10) / 10,
-    carbs: Math.round((food.carbs * portion) / 100 * 10) / 10,
-    fat: Math.round((food.fat * portion) / 100 * 10) / 10,
+    kcal:    Math.round((food.kcal     * portion) / 100),
+    protein: Math.round((food.protein  * portion) / 100 * 10) / 10,
+    carbs:   Math.round((food.carbs    * portion) / 100 * 10) / 10,
+    fat:     Math.round((food.fat      * portion) / 100 * 10) / 10,
+    fiber:   Math.round(((food.fiber ?? 0) * portion) / 100 * 10) / 10,
   })
 
   const handleSave = async () => {
@@ -136,7 +138,7 @@ export default function AddNutrition({ onClose }: { onClose: () => void }) {
         meal,
         portion,
         ...macros,
-        per100g: { kcal: selected.kcal, protein: selected.protein, carbs: selected.carbs, fat: selected.fat },
+        per100g: { kcal: selected.kcal, protein: selected.protein, carbs: selected.carbs, fat: selected.fat, fiber: selected.fiber ?? 0 },
         date: new Date().toISOString().split('T')[0],
         createdAt: serverTimestamp(),
       })
@@ -243,8 +245,9 @@ export default function AddNutrition({ onClose }: { onClose: () => void }) {
                 <Text style={styles.kcalLabel}>kcal</Text>
               </View>
               <MacroPill label="P" value={macros.protein} color="#f87171" />
-              <MacroPill label="K" value={macros.carbs} color="#fbbf24" />
-              <MacroPill label="F" value={macros.fat} color="#34d399" />
+              <MacroPill label="K" value={macros.carbs}   color="#fbbf24" />
+              <MacroPill label="F" value={macros.fat}     color="#34d399" />
+              <MacroPill label="B" value={macros.fiber}   color="#a78bfa" />
             </View>
           )}
 

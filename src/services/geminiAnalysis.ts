@@ -10,6 +10,7 @@ export interface AnalysisInput {
   supplements: any[]
   training: any[]
   profile: {
+    name: string
     gender: string | null
     birthYear: number | null
     cyclePhase: string
