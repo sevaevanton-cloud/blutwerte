@@ -4,8 +4,6 @@ import { collection, getDocs, limit, orderBy, query, where } from 'firebase/fire
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Dimensions,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,30 +11,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
-import AddBloodValues from '../../components/add/AddBloodValues'
-import AddNutrition from '../../components/add/AddNutrition'
-import AddSupplement from '../../components/add/AddSupplement'
-import AddTraining from '../../components/add/AddTraining'
 import { db } from '../../config/firebase'
 import { BLOOD_VALUES } from '../../constants/bloodValues'
-import { BRAND, BRAND_LIGHT } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../context/ProfileContext'
 
-type ModalType = 'blood' | 'nutrition' | 'supplement' | 'training' | null
+const BRAND = '#84a7ff'
+const BRAND_LIGHT = '#eef1ff'
 
-const MODAL_TITLES: Record<NonNullable<ModalType>, { icon: string; title: string; subtitle: string }> = {
-  blood:      { icon: '🩸', title: 'Blutwerte',  subtitle: 'Laborwerte eintragen' },
-  nutrition:  { icon: '🥗', title: 'Ernährung',  subtitle: 'Mahlzeit tracken' },
-  supplement: { icon: '💊', title: 'Supplement', subtitle: 'Einnahme eintragen' },
-  training:   { icon: '🏋️', title: 'Training',   subtitle: 'Einheit erfassen' },
-}
-
-const { width } = Dimensions.get('window')
-
-// ── Circular Progress Ring ────────────────────────────────────────
 function RingProgress({ value, max, size = 90, stroke = 8, color = BRAND, label, sublabel }: {
   value: number; max: number; size?: number; stroke?: number
   color?: string; label: string; sublabel?: string
@@ -63,7 +46,6 @@ function RingProgress({ value, max, size = 90, stroke = 8, color = BRAND, label,
   )
 }
 
-// ── Supplement Check Item ─────────────────────────────────────────
 function SupplementItem({ name, dose, checked, onToggle }: {
   name: string; dose: string; checked: boolean; onToggle: () => void
 }) {
@@ -80,7 +62,6 @@ function SupplementItem({ name, dose, checked, onToggle }: {
   )
 }
 
-// ── Macro Bar ─────────────────────────────────────────────────────
 function MacroBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
   const pct = Math.min((value / max) * 100, 100)
   return (
@@ -96,7 +77,6 @@ function MacroBar({ label, value, max, color }: { label: string; value: number; 
   )
 }
 
-// ── Helpers ───────────────────────────────────────────────────────
 function countAbnormalValues(values: Record<string, { value: number; unit: string }>, gender: string) {
   let count = 0
   for (const [id, entry] of Object.entries(values)) {
@@ -109,28 +89,22 @@ function countAbnormalValues(values: Record<string, { value: number; unit: strin
   return count
 }
 
-// ── Main Component ────────────────────────────────────────────────
 export default function Home() {
-  const profileContext = useProfile()
-  const profile = profileContext.profile
+  const { profile, calorieGoal } = useProfile()
   const { uid } = useAuth()
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [activeModal, setActiveModal] = useState<ModalType>(null)
-
-  // Data state
   const [lastBloodTest, setLastBloodTest] = useState<{ date: string; abnormal: number; total: number } | null>(null)
   const [supplements, setSupplements] = useState<{ id: string; name: string; dose: string; unit: string; checked: boolean }[]>([])
   const [todayTraining, setTodayTraining] = useState<{ id: string; label: string; duration: number; intensity: string }[]>([])
-  const [todayNutrition, setTodayNutrition] = useState<{ calories: number; protein: number; carbs: number; fat: number; fiber: number } | null>(null)
+  const [todayNutrition, setTodayNutrition] = useState<{ calories: number; protein: number; carbs: number; fat: number } | null>(null)
 
   const today = new Date().toISOString().split('T')[0]
 
   const loadData = useCallback(async () => {
     if (!uid) return
     try {
-      // 1. Letzter Bluttest
       const bloodSnap = await getDocs(
         query(collection(db, 'users', uid, 'bloodTests'), orderBy('createdAt', 'desc'), limit(1))
       )
@@ -143,7 +117,6 @@ export default function Home() {
         setLastBloodTest(null)
       }
 
-      // 2. Supplements
       const suppSnap = await getDocs(
         query(collection(db, 'users', uid, 'supplements'), orderBy('createdAt', 'desc'))
       )
@@ -158,7 +131,6 @@ export default function Home() {
         }))
       })
 
-      // 3. Heutiges Training
       const trainSnap = await getDocs(
         query(collection(db, 'users', uid, 'training'), where('date', '==', today))
       )
@@ -169,7 +141,6 @@ export default function Home() {
         intensity: d.data().intensity,
       })))
 
-      // 4. Heutige Ernährung
       const nutritionSnap = await getDocs(
         query(collection(db, 'users', uid, 'nutrition'), where('date', '==', today))
       )
@@ -178,12 +149,11 @@ export default function Home() {
           const data = d.data()
           return {
             calories: acc.calories + (data.calories ?? data.kcal ?? 0),
-            protein:  acc.protein  + (data.protein  ?? 0),
-            carbs:    acc.carbs    + (data.carbs     ?? 0),
-            fat:      acc.fat      + (data.fat       ?? 0),
-            fiber:    acc.fiber    + (data.fiber      ?? 0),
+            protein: acc.protein + (data.protein ?? 0),
+            carbs: acc.carbs + (data.carbs ?? 0),
+            fat: acc.fat + (data.fat ?? 0),
           }
-        }, { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 })
+        }, { calories: 0, protein: 0, carbs: 0, fat: 0 })
         setTodayNutrition(totals)
       } else {
         setTodayNutrition(null)
@@ -211,8 +181,11 @@ export default function Home() {
 
   const dateStr = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
   const supplementsDone = supplements.filter(s => s.checked).length
-  const calorieGoal = profileContext.calorieGoal
-  const { protein: proteinGoal, carbs: carbsGoal, fat: fatGoal, fiber: fiberGoal } = profileContext.macroGoals
+
+  // Makro-Ziele basierend auf Kalorienziel
+  const proteinGoal = Math.round(calorieGoal * 0.30 / 4)
+  const carbsGoal   = Math.round(calorieGoal * 0.45 / 4)
+  const fatGoal     = Math.round(calorieGoal * 0.25 / 9)
 
   if (loading) {
     return (
@@ -223,7 +196,6 @@ export default function Home() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f8fc' }} edges={['top']}>
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -243,7 +215,11 @@ export default function Home() {
 
       {/* ── Bluttest Banner ── */}
       {lastBloodTest ? (
-        <TouchableOpacity style={styles.bloodCard} activeOpacity={0.85} onPress={() => router.push('/(tabs)/analysis')}>
+        <TouchableOpacity
+          style={styles.bloodCard}
+          activeOpacity={0.85}
+          onPress={() => router.push('/(tabs)/analysis')}
+        >
           <View style={styles.bloodCardLeft}>
             <Text style={styles.bloodCardLabel}>Letzter Bluttest</Text>
             <Text style={styles.bloodCardDate}>{lastBloodTest.date}</Text>
@@ -262,7 +238,11 @@ export default function Home() {
           <Text style={styles.bloodCardArrow}>KI-Analyse →</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={[styles.bloodCard, { backgroundColor: '#f3f4f6' }]} activeOpacity={0.85} onPress={() => setActiveModal('blood')}>
+        <TouchableOpacity
+          style={[styles.bloodCard, { backgroundColor: '#f3f4f6' }]}
+          activeOpacity={0.85}
+          onPress={() => router.push('/(tabs)/add')}
+        >
           <View style={styles.bloodCardLeft}>
             <Text style={[styles.bloodCardLabel, { color: '#9ca3af' }]}>Noch kein Bluttest</Text>
             <Text style={[styles.bloodCardDate, { color: '#6b7280' }]}>Jetzt eintragen</Text>
@@ -275,54 +255,52 @@ export default function Home() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>🥗 Ernährung heute</Text>
-          <TouchableOpacity onPress={() => setActiveModal('nutrition')}><Text style={styles.cardAction}>+ Eintragen</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/add')}>
+            <Text style={styles.cardAction}>+ Eintragen</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Kalorienkreis + Makros – immer sichtbar */}
-        <View style={styles.nutritionMain}>
-          <View style={styles.ringWrapper}>
-            <RingProgress
-              value={todayNutrition?.calories ?? 0}
-              max={calorieGoal}
-              size={130}
-              stroke={13}
-              color={BRAND}
-              label="kcal"
-              sublabel={`/${calorieGoal}`}
-            />
+        {todayNutrition ? (
+          <>
+            <View style={styles.calorieRow}>
+              <RingProgress
+                value={todayNutrition.calories}
+                max={calorieGoal}
+                size={110}
+                stroke={10}
+                color={BRAND}
+                label="kcal"
+                sublabel={`/${calorieGoal}`}
+              />
+              <View style={styles.macros}>
+                <MacroBar label="Protein" value={todayNutrition.protein} max={proteinGoal} color="#f87171" />
+                <MacroBar label="Kohlenhydrate" value={todayNutrition.carbs} max={carbsGoal} color="#fbbf24" />
+                <MacroBar label="Fett" value={todayNutrition.fat} max={fatGoal} color="#34d399" />
+              </View>
+            </View>
+            <View style={styles.calorieFooter}>
+              <View style={styles.calorieInfo}>
+                <Text style={styles.calorieInfoValue}>{todayNutrition.calories}</Text>
+                <Text style={styles.calorieInfoLabel}>gegessen</Text>
+              </View>
+              <View style={styles.calorieDivider} />
+              <View style={styles.calorieInfo}>
+                <Text style={[styles.calorieInfoValue, { color: BRAND }]}>
+                  {Math.max(calorieGoal - todayNutrition.calories, 0)}
+                </Text>
+                <Text style={styles.calorieInfoLabel}>verbleibend</Text>
+              </View>
+              <View style={styles.calorieDivider} />
+              <View style={styles.calorieInfo}>
+                <Text style={styles.calorieInfoValue}>{calorieGoal}</Text>
+                <Text style={styles.calorieInfoLabel}>Ziel</Text>
+              </View>
+            </View>
+          </>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>Noch keine Mahlzeiten heute</Text>
+            <Text style={styles.emptyStateSub}>Trage deine erste Mahlzeit ein</Text>
           </View>
-          <View style={styles.macros}>
-            <MacroBar label="Protein"       value={todayNutrition?.protein ?? 0} max={proteinGoal} color="#f87171" />
-            <MacroBar label="Kohlenhydrate" value={todayNutrition?.carbs   ?? 0} max={carbsGoal}   color="#fbbf24" />
-            <MacroBar label="Fett"          value={todayNutrition?.fat     ?? 0} max={fatGoal}     color="#34d399" />
-            <MacroBar label="Ballaststoffe" value={todayNutrition?.fiber   ?? 0} max={fiberGoal}   color="#a78bfa" />
-          </View>
-        </View>
-
-        {/* Kalorien-Footer – immer sichtbar */}
-        <View style={styles.calorieFooter}>
-          <View style={styles.calorieInfo}>
-            <Text style={styles.calorieInfoValue}>
-              {Math.round(todayNutrition?.calories ?? 0).toLocaleString('de-DE')}
-            </Text>
-            <Text style={styles.calorieInfoLabel}>gegessen</Text>
-          </View>
-          <View style={styles.calorieDivider} />
-          <View style={styles.calorieInfo}>
-            <Text style={[styles.calorieInfoValue, { color: BRAND }]}>
-              {Math.max(calorieGoal - (todayNutrition?.calories ?? 0), 0).toLocaleString('de-DE')}
-            </Text>
-            <Text style={styles.calorieInfoLabel}>verbleibend</Text>
-          </View>
-          <View style={styles.calorieDivider} />
-          <View style={styles.calorieInfo}>
-            <Text style={styles.calorieInfoValue}>{calorieGoal.toLocaleString('de-DE')}</Text>
-            <Text style={styles.calorieInfoLabel}>Ziel</Text>
-          </View>
-        </View>
-
-        {!todayNutrition && (
-          <Text style={styles.emptyStateSub}>Noch keine Mahlzeiten heute – tippe + Eintragen</Text>
         )}
       </View>
 
@@ -357,7 +335,9 @@ export default function Home() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>🏋️ Training heute</Text>
-          <TouchableOpacity onPress={() => setActiveModal('training')}><Text style={styles.cardAction}>+ Eintragen</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/add')}>
+            <Text style={styles.cardAction}>+ Eintragen</Text>
+          </TouchableOpacity>
         </View>
         {todayTraining.length > 0 ? (
           <View style={{ gap: 8 }}>
@@ -378,51 +358,7 @@ export default function Home() {
           </View>
         )}
       </View>
-
-      {/* ── Schnellzugriff ── */}
-      <View style={styles.quickActions}>
-        {([
-          { icon: '🩸', label: 'Blutwerte',  modal: 'blood'      },
-          { icon: '🥗', label: 'Mahlzeit',   modal: 'nutrition'  },
-          { icon: '🏋️', label: 'Training',   modal: 'training'   },
-          { icon: '💊', label: 'Supplement', modal: 'supplement' },
-        ] as const).map(btn => (
-          <TouchableOpacity key={btn.label} style={styles.quickBtn} onPress={() => setActiveModal(btn.modal)}>
-            <Text style={styles.quickBtnIcon}>{btn.icon}</Text>
-            <Text style={styles.quickBtnLabel}>{btn.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </ScrollView>
-
-    {/* ── Add-Modals ── */}
-    <Modal
-      visible={!!activeModal}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={() => setActiveModal(null)}
-    >
-      <View style={styles.modal}>
-        <View style={styles.modalHeader}>
-          <View>
-            <Text style={styles.modalTitle}>
-              {activeModal && `${MODAL_TITLES[activeModal].icon} ${MODAL_TITLES[activeModal].title}`}
-            </Text>
-            <Text style={styles.modalSubtitle}>
-              {activeModal && MODAL_TITLES[activeModal].subtitle}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.closeBtn} onPress={() => setActiveModal(null)}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-        {activeModal === 'blood'      && <AddBloodValues  onClose={() => { setActiveModal(null); loadData() }} />}
-        {activeModal === 'nutrition'  && <AddNutrition    onClose={() => { setActiveModal(null); loadData() }} />}
-        {activeModal === 'supplement' && <AddSupplement   onClose={() => { setActiveModal(null); loadData() }} />}
-        {activeModal === 'training'   && <AddTraining     onClose={() => { setActiveModal(null); loadData() }} />}
-      </View>
-    </Modal>
-    </SafeAreaView>
   )
 }
 
@@ -445,14 +381,13 @@ const styles = StyleSheet.create({
   bloodCardBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   bloodCardArrow: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700' },
 
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16, shadowColor: BRAND, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16, shadowColor: '#84a7ff', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
   cardSubtitle: { fontSize: 13, color: '#9ca3af', fontWeight: '500' },
   cardAction: { fontSize: 13, color: BRAND, fontWeight: '700' },
 
-  nutritionMain: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 16 },
-  ringWrapper: { alignItems: 'center', justifyContent: 'center' },
+  calorieRow: { flexDirection: 'row', alignItems: 'center', gap: 20, marginBottom: 16 },
   ringCenter: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   ringValue: { fontSize: 18, fontWeight: '800' },
   ringSublabel: { fontSize: 10, color: '#9ca3af', fontWeight: '500' },
@@ -491,16 +426,4 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 20 },
   emptyStateText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
   emptyStateSub: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
-
-  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  quickBtn: { flex: 1, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 14, alignItems: 'center', shadowColor: BRAND, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
-  quickBtnIcon: { fontSize: 22 },
-  quickBtnLabel: { fontSize: 11, color: '#6b7280', fontWeight: '600', marginTop: 4 },
-
-  modal: { flex: 1, backgroundColor: '#f7f8fc' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 24, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1a1a2e' },
-  modalSubtitle: { fontSize: 13, color: '#9ca3af', marginTop: 2 },
-  closeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
-  closeBtnText: { fontSize: 14, color: '#6b7280', fontWeight: '700' },
 })
