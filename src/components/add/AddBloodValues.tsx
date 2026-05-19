@@ -1,5 +1,4 @@
 // src/components/add/AddBloodValues.tsx
-'use no memo';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -21,11 +20,12 @@ import {
   BloodValue,
   getValuesByCategory,
 } from '../../constants/bloodValues';
+import { BRAND } from '../../constants/theme';
 import { useAuth } from '../../context/AuthContext';
 import { useProfile } from '../../context/ProfileContext';
 import { scanBloodDocument } from '../../services/geminiScan';
+'use no memo';
 
-const BRAND = '#84a7ff'
 
 interface EnteredValue {
   value: string

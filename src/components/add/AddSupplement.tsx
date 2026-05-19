@@ -1,11 +1,14 @@
 // src/components/add/AddSupplement.tsx
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
-  Alert, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native'
+import { db } from '../../config/firebase'
+import { BRAND } from '../../constants/theme'
+import { useAuth } from '../../context/AuthContext'
 
-const BRAND = '#84a7ff'
 
 const COMMON_SUPPLEMENTS = [
   'Vitamin D3', 'Vitamin K2', 'Omega-3', 'Magnesium',
@@ -14,21 +17,41 @@ const COMMON_SUPPLEMENTS = [
 ]
 
 export default function AddSupplement({ onClose }: { onClose: () => void }) {
+  const { uid } = useAuth()
   const [name, setName] = useState('')
   const [dose, setDose] = useState('')
   const [unit, setUnit] = useState('mg')
   const [time, setTime] = useState('Morgens')
+  const [saving, setSaving] = useState(false)
 
   const UNITS = ['mg', 'µg', 'g', 'IE', 'ml', 'Kapsel(n)', 'Tablette(n)']
   const TIMES = ['Morgens', 'Mittags', 'Abends', 'Vor dem Training', 'Nach dem Training']
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Bitte wähle oder gib ein Supplement ein.')
       return
     }
-    Alert.alert('✅ Gespeichert!', `${name} ${dose}${unit} wurde eingetragen.`)
-    onClose()
+    if (!uid) {
+      Alert.alert('Fehler', 'Nicht eingeloggt.')
+      return
+    }
+    setSaving(true)
+    try {
+      await addDoc(collection(db, 'users', uid, 'supplements'), {
+        name: name.trim(),
+        dose: dose ? parseFloat(dose.replace(',', '.')) : null,
+        unit,
+        time,
+        createdAt: serverTimestamp(),
+      })
+      Alert.alert('✅ Gespeichert!', `${name}${dose ? ` ${dose} ${unit}` : ''} wurde eingetragen.`)
+      onClose()
+    } catch (e) {
+      Alert.alert('Fehler', 'Speichern fehlgeschlagen. Bitte erneut versuchen.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -98,8 +121,15 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveBtnText}>💾 Supplement speichern</Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.saveBtnText}>💾 Supplement speichern</Text>
+          }
         </TouchableOpacity>
       </View>
     </View>

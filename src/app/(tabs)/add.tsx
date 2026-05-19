@@ -12,8 +12,8 @@ import AddBloodValues from '../../components/add/AddBloodValues'
 import AddNutrition from '../../components/add/AddNutrition'
 import AddSupplement from '../../components/add/AddSupplement'
 import AddTraining from '../../components/add/AddTraining'
+import { BRAND } from '../../constants/theme'
 
-const BRAND = '#84a7ff'
     
 const CATEGORIES = [
   {

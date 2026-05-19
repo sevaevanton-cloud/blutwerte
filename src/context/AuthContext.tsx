@@ -1,5 +1,14 @@
 // src/context/AuthContext.tsx
-import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth'
+import {
+  EmailAuthProvider,
+  GoogleAuthProvider,
+  User,
+  signOut as firebaseSignOut,
+  linkWithCredential,
+  linkWithPopup,
+  onAuthStateChanged,
+  signInAnonymously,
+} from 'firebase/auth'
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { auth } from '../config/firebase'
 
@@ -7,12 +16,20 @@ interface AuthContextType {
   user: User | null
   uid: string | null
   isAuthReady: boolean
+  isAnonymous: boolean
+  upgradeWithEmail: (email: string, password: string) => Promise<void>
+  upgradeWithGoogle: () => Promise<void>
+  signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   uid: null,
   isAuthReady: false,
+  isAnonymous: true,
+  upgradeWithEmail: async () => {},
+  upgradeWithGoogle: async () => {},
+  signOut: async () => {},
 })
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -25,7 +42,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsAuthReady(true)
       return
     }
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser)
@@ -39,12 +55,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       setIsAuthReady(true)
     })
-
     return unsubscribe
   }, [])
 
+  /** Anonymen Account mit E-Mail + Passwort verknüpfen */
+  const upgradeWithEmail = async (email: string, password: string) => {
+    if (!auth.currentUser) throw new Error('Kein Nutzer eingeloggt')
+    const credential = EmailAuthProvider.credential(email, password)
+    const result = await linkWithCredential(auth.currentUser, credential)
+    setUser(result.user)
+  }
+
+  /** Anonymen Account mit Google verknüpfen (Web-Popup) */
+  const upgradeWithGoogle = async () => {
+    if (!auth.currentUser) throw new Error('Kein Nutzer eingeloggt')
+    const provider = new GoogleAuthProvider()
+    const result = await linkWithPopup(auth.currentUser, provider)
+    setUser(result.user)
+  }
+
+  const signOut = async () => {
+    await firebaseSignOut(auth)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, uid: user?.uid ?? null, isAuthReady }}>
+    <AuthContext.Provider value={{
+      user,
+      uid: user?.uid ?? null,
+      isAuthReady,
+      isAnonymous: user?.isAnonymous ?? true,
+      upgradeWithEmail,
+      upgradeWithGoogle,
+      signOut,
+    }}>
       {children}
     </AuthContext.Provider>
   )

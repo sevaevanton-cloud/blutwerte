@@ -2,15 +2,13 @@
 import { router } from 'expo-router'
 import React, { useRef, useState } from 'react'
 import {
-    Animated, Dimensions, KeyboardAvoidingView, Platform,
-    ScrollView, StyleSheet, Text, TextInput,
-    TouchableOpacity, View,
+  Animated, Dimensions, KeyboardAvoidingView, Platform,
+  ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
 } from 'react-native'
+import { BRAND, BRAND_DARK, BRAND_LIGHT } from '../constants/theme'
 import { Gender, useProfile } from '../context/ProfileContext'
 
-const BRAND = '#84a7ff'
-const BRAND_LIGHT = '#eef1ff'
-const BRAND_DARK = '#5b7ef7'
 const { width } = Dimensions.get('window')
 
 const CYCLE_PHASES = [
@@ -264,7 +262,7 @@ const styles = StyleSheet.create({
   stepTitle: { fontSize: 26, fontWeight: '800', color: '#1a1a2e', marginBottom: 10 },
   stepSubtitle: { fontSize: 15, color: '#6b7280', lineHeight: 22, marginBottom: 28 },
 
-  bigInput: { backgroundColor: '#fff', borderRadius: 14, padding: 16, fontSize: 18, color: '#1a1a2e', borderWidth: 1.5, borderColor: '#e5e7eb', shadowColor: '#84a7ff', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  bigInput: { backgroundColor: '#fff', borderRadius: 14, padding: 16, fontSize: 18, color: '#1a1a2e', borderWidth: 1.5, borderColor: '#e5e7eb', shadowColor: BRAND, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
 
   genderOptions: { gap: 12 },
   genderCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 14, borderWidth: 1.5, borderColor: '#e5e7eb' },

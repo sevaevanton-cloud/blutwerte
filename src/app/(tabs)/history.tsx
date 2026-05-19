@@ -2,18 +2,18 @@
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-    ActivityIndicator,
-    Dimensions,
-    ScrollView, StyleSheet, Text,
-    TouchableOpacity, View,
+  ActivityIndicator,
+  Dimensions,
+  ScrollView, StyleSheet, Text,
+  TouchableOpacity, View,
 } from 'react-native'
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
 import { db } from '../../config/firebase'
 import { BLOOD_VALUES } from '../../constants/bloodValues'
+import { BRAND } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../context/ProfileContext'
 
-const BRAND = '#84a7ff'
 const { width } = Dimensions.get('window')
 const CHART_WIDTH = width - 40
 const CHART_HEIGHT = 200
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 13, fontWeight: '600', color: '#6b7280' },
   pillTextActive: { color: '#fff' },
 
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16, shadowColor: '#84a7ff', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16, shadowColor: BRAND, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
 
   chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   chartTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },

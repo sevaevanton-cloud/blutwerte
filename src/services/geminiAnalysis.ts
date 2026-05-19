@@ -33,6 +33,7 @@ export async function analyzeHealthData(input: AnalysisInput): Promise<AnalysisR
   const latestBloodTest = bloodTests[0]
   const age = profile.birthYear ? new Date().getFullYear() - profile.birthYear : null
 
+  // Kein Name im Prompt – Pseudonymisierung gemäß DSGVO
   const prompt = `Du bist ein erfahrener Gesundheitsanalyst. Analysiere die folgenden Gesundheitsdaten und antworte AUSSCHLIESSLICH mit einem JSON-Objekt. Kein Text davor oder danach, keine Erklärungen, keine Markdown-Formatierung, keine Backticks.
 
 NUTZERPROFIL:
