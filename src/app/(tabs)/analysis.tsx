@@ -56,15 +56,13 @@ export default function Analysis() {
     loadCache()
   }, [uid])
 
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
   const fetchData = async () => {
+    if (!uid) throw new Error('Nicht eingeloggt.')
     const [bloodSnap, nutritionSnap, supplementSnap, trainingSnap] = await Promise.all([
-      getDocs(query(collection(db, 'users', uid!, 'bloodTests'), orderBy('createdAt', 'desc'), limit(3))),
-      getDocs(query(collection(db, 'users', uid!, 'nutrition'), orderBy('createdAt', 'desc'), limit(20))),
-      getDocs(query(collection(db, 'users', uid!, 'supplements'), orderBy('createdAt', 'desc'), limit(20))),
-      getDocs(query(collection(db, 'users', uid!, 'training'), orderBy('createdAt', 'desc'), limit(10))),
+      getDocs(query(collection(db, 'users', uid, 'bloodTests'), orderBy('createdAt', 'desc'), limit(3))),
+      getDocs(query(collection(db, 'users', uid, 'nutrition'), orderBy('createdAt', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'users', uid, 'supplements'), orderBy('createdAt', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'users', uid, 'training'), orderBy('createdAt', 'desc'), limit(10))),
     ])
 
     return {

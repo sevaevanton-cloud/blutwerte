@@ -1,33 +1,42 @@
 // src/components/add/AddTraining.tsx
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
-  ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
-  TextInput, TouchableOpacity, View,
+  Alert, ScrollView, StyleSheet, Text,
+  TextInput, TouchableOpacity, View
 } from 'react-native'
 import { db } from '../../config/firebase'
 import { useAuth } from '../../context/AuthContext'
+import SaveButton from '../ui/SaveButton'
 
 const TRAINING_TYPES = [
   { id: 'strength', label: '🏋️ Krafttraining' },
-  { id: 'cardio', label: '🏃 Cardio' },
-  { id: 'yoga', label: '🧘 Yoga / Mobility' },
-  { id: 'swim', label: '🏊 Schwimmen' },
-  { id: 'bike', label: '🚴 Radfahren' },
-  { id: 'hiit', label: '⚡ HIIT' },
-  { id: 'walk', label: '🚶 Spazieren' },
-  { id: 'other', label: '🎯 Sonstiges' },
+  { id: 'cardio',   label: '🏃 Cardio' },
+  { id: 'yoga',     label: '🧘 Yoga / Mobility' },
+  { id: 'swim',     label: '🏊 Schwimmen' },
+  { id: 'bike',     label: '🚴 Radfahren' },
+  { id: 'hiit',     label: '⚡ HIIT' },
+  { id: 'walk',     label: '🚶 Spazieren' },
+  { id: 'other',    label: '🎯 Sonstiges' },
 ]
 
 const INTENSITIES = ['Leicht', 'Moderat', 'Intensiv', 'Maximal']
 
-export default function AddTraining({ onClose }: { onClose: () => void }) {
+interface Props {
+  onClose: () => void
+  docId?: string
+  initialData?: { type: string; duration: string; intensity: string; note: string }
+}
+
+export default function AddTraining({ onClose, docId, initialData }: Props) {
   const { uid } = useAuth()
-  const [type, setType] = useState('')
-  const [duration, setDuration] = useState('')
-  const [intensity, setIntensity] = useState('Moderat')
-  const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
+  const isEditing = !!docId
+
+  const [type,      setType]      = useState(initialData?.type      ?? '')
+  const [duration,  setDuration]  = useState(initialData?.duration  ?? '')
+  const [intensity, setIntensity] = useState(initialData?.intensity ?? 'Moderat')
+  const [note,      setNote]      = useState(initialData?.note      ?? '')
+  const [saving,    setSaving]    = useState(false)
 
   const handleSave = async () => {
     if (!type) {
@@ -38,19 +47,32 @@ export default function AddTraining({ onClose }: { onClose: () => void }) {
       Alert.alert('Bitte gib die Dauer ein.')
       return
     }
+    if (!uid) {
+      Alert.alert('Fehler', 'Nicht eingeloggt.')
+      return
+    }
     setSaving(true)
     try {
       const label = TRAINING_TYPES.find((t) => t.id === type)?.label ?? type
-      await addDoc(collection(db, 'users', uid!, 'training'), {
+      const data = {
         type,
         label,
         duration: parseInt(duration),
         intensity,
         note: note.trim(),
-        date: new Date().toISOString().split('T')[0],
-        createdAt: serverTimestamp(),
-      })
-      Alert.alert('✅ Gespeichert!', `${label} – ${duration} Min. wurde eingetragen.`)
+      }
+
+      if (isEditing) {
+        await updateDoc(doc(db, 'users', uid, 'training', docId), data)
+        Alert.alert('✅ Aktualisiert!', `${label} wurde aktualisiert.`)
+      } else {
+        await addDoc(collection(db, 'users', uid, 'training'), {
+          ...data,
+          date: new Date().toISOString().split('T')[0],
+          createdAt: serverTimestamp(),
+        })
+        Alert.alert('✅ Gespeichert!', `${label} – ${duration} Min. wurde eingetragen.`)
+      }
       onClose()
     } catch (e) {
       Alert.alert('Fehler', 'Speichern fehlgeschlagen.')
@@ -109,18 +131,12 @@ export default function AddTraining({ onClose }: { onClose: () => void }) {
         />
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          {saving
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.saveBtnText}>💾 Training speichern</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      <SaveButton
+        onPress={handleSave}
+        label={isEditing ? '💾 Änderungen speichern' : '💾 Training speichern'}
+        loading={saving}
+        color="#fbbf24"
+      />
     </View>
   )
 }
@@ -138,7 +154,4 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#fbbf24', borderColor: '#fbbf24' },
   chipText: { fontSize: 13, color: '#6b7280', fontWeight: '600' },
   chipTextActive: { color: '#fff' },
-  footer: { padding: 16, paddingBottom: 32, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  saveBtn: { backgroundColor: '#fbbf24', padding: 16, borderRadius: 14, alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 })

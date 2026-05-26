@@ -9,6 +9,7 @@ import { db } from '../../config/firebase'
 import { LocalFood, searchLocalFoods } from '../../constants/foodDatabase'
 import { BRAND, BRAND_LIGHT } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
+import SaveButton from '../ui/SaveButton'
 
 
 const MEALS = ['Frühstück', 'Mittagessen', 'Abendessen', 'Snack']
@@ -128,11 +129,12 @@ export default function AddNutrition({ onClose }: { onClose: () => void }) {
 
   const handleSave = async () => {
     if (!selected) return
+    if (!uid) { Alert.alert('Fehler', 'Nicht eingeloggt.'); return }
     const portion = parseFloat(selected.portion) || 100
     const macros = calcMacros(selected, portion)
     setSaving(true)
     try {
-      await addDoc(collection(db, 'users', uid!, 'nutrition'), {
+      await addDoc(collection(db, 'users', uid, 'nutrition'), {
         name: selected.name,
         brand: selected.brand,
         meal,
@@ -267,18 +269,11 @@ export default function AddNutrition({ onClose }: { onClose: () => void }) {
       )}
 
       {selected && (
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.saveBtnText}>💾 Mahlzeit speichern</Text>
-            }
-          </TouchableOpacity>
-        </View>
+        <SaveButton
+          onPress={handleSave}
+          label="💾 Mahlzeit speichern"
+          loading={saving}
+        />
       )}
 
       {/* ── Leerer Zustand ── */}
@@ -344,9 +339,6 @@ const styles = StyleSheet.create({
   mealChipText: { fontSize: 13, fontWeight: '600', color: '#6b7280' },
   mealChipTextActive: { color: BRAND },
 
-  footer: { padding: 16, paddingBottom: 32, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  saveBtn: { backgroundColor: BRAND, padding: 16, borderRadius: 14, alignItems: 'center', shadowColor: BRAND, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyEmoji: { fontSize: 56, marginBottom: 16 },

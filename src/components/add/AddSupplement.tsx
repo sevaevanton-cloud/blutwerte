@@ -1,14 +1,14 @@
 // src/components/add/AddSupplement.tsx
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
-  ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
-  TextInput, TouchableOpacity, View,
+  Alert, ScrollView, StyleSheet, Text,
+  TextInput, TouchableOpacity, View
 } from 'react-native'
 import { db } from '../../config/firebase'
 import { BRAND } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
-
+import SaveButton from '../ui/SaveButton'
 
 const COMMON_SUPPLEMENTS = [
   'Vitamin D3', 'Vitamin K2', 'Omega-3', 'Magnesium',
@@ -16,16 +16,24 @@ const COMMON_SUPPLEMENTS = [
   'Ashwagandha', 'Kreatin', 'Protein', 'Vitamin C',
 ]
 
-export default function AddSupplement({ onClose }: { onClose: () => void }) {
-  const { uid } = useAuth()
-  const [name, setName] = useState('')
-  const [dose, setDose] = useState('')
-  const [unit, setUnit] = useState('mg')
-  const [time, setTime] = useState('Morgens')
-  const [saving, setSaving] = useState(false)
+const UNITS = ['mg', 'µg', 'g', 'IE', 'ml', 'Kapsel(n)', 'Tablette(n)']
+const TIMES = ['Morgens', 'Mittags', 'Abends', 'Vor dem Training', 'Nach dem Training']
 
-  const UNITS = ['mg', 'µg', 'g', 'IE', 'ml', 'Kapsel(n)', 'Tablette(n)']
-  const TIMES = ['Morgens', 'Mittags', 'Abends', 'Vor dem Training', 'Nach dem Training']
+interface Props {
+  onClose: () => void
+  docId?: string
+  initialData?: { name: string; rawDose: string; unit: string; time: string }
+}
+
+export default function AddSupplement({ onClose, docId, initialData }: Props) {
+  const { uid } = useAuth()
+  const isEditing = !!docId
+
+  const [name, setName]   = useState(initialData?.name    ?? '')
+  const [dose, setDose]   = useState(initialData?.rawDose ?? '')
+  const [unit, setUnit]   = useState(initialData?.unit    ?? 'mg')
+  const [time, setTime]   = useState(initialData?.time    ?? 'Morgens')
+  const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -38,14 +46,23 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
     }
     setSaving(true)
     try {
-      await addDoc(collection(db, 'users', uid, 'supplements'), {
+      const data = {
         name: name.trim(),
         dose: dose ? parseFloat(dose.replace(',', '.')) : null,
         unit,
         time,
-        createdAt: serverTimestamp(),
-      })
-      Alert.alert('✅ Gespeichert!', `${name}${dose ? ` ${dose} ${unit}` : ''} wurde eingetragen.`)
+      }
+
+      if (isEditing) {
+        await updateDoc(doc(db, 'users', uid, 'supplements', docId), data)
+        Alert.alert('✅ Aktualisiert!', `${name} wurde aktualisiert.`)
+      } else {
+        await addDoc(collection(db, 'users', uid, 'supplements'), {
+          ...data,
+          createdAt: serverTimestamp(),
+        })
+        Alert.alert('✅ Gespeichert!', `${name}${dose ? ` ${dose} ${unit}` : ''} wurde eingetragen.`)
+      }
       onClose()
     } catch (e) {
       Alert.alert('Fehler', 'Speichern fehlgeschlagen. Bitte erneut versuchen.')
@@ -57,22 +74,24 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Schnellauswahl */}
-        <Text style={styles.label}>Häufige Supplements</Text>
-        <View style={styles.chipGrid}>
-          {COMMON_SUPPLEMENTS.map((s) => (
-            <TouchableOpacity
-              key={s}
-              style={[styles.chip, name === s && styles.chipActive]}
-              onPress={() => setName(s)}
-            >
-              <Text style={[styles.chipText, name === s && styles.chipTextActive]}>{s}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {!isEditing && (
+          <>
+            <Text style={styles.label}>Häufige Supplements</Text>
+            <View style={styles.chipGrid}>
+              {COMMON_SUPPLEMENTS.map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.chip, name === s && styles.chipActive]}
+                  onPress={() => setName(s)}
+                >
+                  <Text style={[styles.chipText, name === s && styles.chipTextActive]}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
 
-        {/* Eigene Eingabe */}
-        <Text style={styles.label}>Oder manuell eingeben</Text>
+        <Text style={styles.label}>{isEditing ? 'Name' : 'Oder manuell eingeben'}</Text>
         <TextInput
           style={styles.input}
           value={name}
@@ -81,7 +100,6 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
           placeholderTextColor="#9ca3af"
         />
 
-        {/* Dosis */}
         <Text style={styles.label}>Dosis</Text>
         <View style={styles.doseRow}>
           <TextInput
@@ -105,7 +123,6 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
           </View>
         </View>
 
-        {/* Zeitpunkt */}
         <Text style={styles.label}>Zeitpunkt</Text>
         <View style={styles.chipGrid}>
           {TIMES.map((t) => (
@@ -120,18 +137,11 @@ export default function AddSupplement({ onClose }: { onClose: () => void }) {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          {saving
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.saveBtnText}>💾 Supplement speichern</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      <SaveButton
+        onPress={handleSave}
+        label={isEditing ? '💾 Änderungen speichern' : '💾 Supplement speichern'}
+        loading={saving}
+      />
     </View>
   )
 }
@@ -151,7 +161,4 @@ const styles = StyleSheet.create({
   unitChipActive: { backgroundColor: BRAND, borderColor: BRAND },
   unitChipText: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
   unitChipTextActive: { color: '#fff' },
-  footer: { padding: 16, paddingBottom: 32, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  saveBtn: { backgroundColor: BRAND, padding: 16, borderRadius: 14, alignItems: 'center', shadowColor: BRAND, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 })

@@ -35,7 +35,8 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": false,
@@ -43,4 +44,3 @@
     }
   }
 }
-

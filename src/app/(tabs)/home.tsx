@@ -1,429 +1,599 @@
-// src/app/(tabs)/home.tsx
-import { router } from 'expo-router'
-import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore'
-import React, { useCallback, useEffect, useState } from 'react'
+// src/components/add/AddBloodValues.tsx
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  RefreshControl,
+  Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-} from 'react-native'
-import Svg, { Circle } from 'react-native-svg'
-import { db } from '../../config/firebase'
-import { BLOOD_VALUES } from '../../constants/bloodValues'
-import { useAuth } from '../../context/AuthContext'
-import { useProfile } from '../../context/ProfileContext'
+} from 'react-native';
+import SaveButton from '../../components/ui/SaveButton'; // ✅ richtig
+import { db } from '../../config/firebase';
+import {
+  BLOOD_VALUE_CATEGORIES,
+  BloodValue,
+  getValuesByCategory,
+} from '../../constants/bloodValues';
+import { BRAND } from '../../constants/theme';
+import { useAuth } from '../../context/AuthContext';
+import { useProfile } from '../../context/ProfileContext';
+import { scanBloodDocument } from '../../services/geminiScan';
 
-const BRAND = '#84a7ff'
-const BRAND_LIGHT = '#eef1ff'
-
-function RingProgress({ value, max, size = 90, stroke = 8, color = BRAND, label, sublabel }: {
-  value: number; max: number; size?: number; stroke?: number
-  color?: string; label: string; sublabel?: string
-}) {
-  const r = (size - stroke) / 2
-  const circ = 2 * Math.PI * r
-  const dash = Math.min(value / max, 1) * circ
-  return (
-    <View style={{ alignItems: 'center' }}>
-      <View style={{ width: size, height: size }}>
-        <Svg width={size} height={size}>
-          <Circle cx={size/2} cy={size/2} r={r} stroke="#f0f0f0" strokeWidth={stroke} fill="none" />
-          <Circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={stroke} fill="none"
-            strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
-            rotation="-90" origin={`${size/2}, ${size/2}`} />
-        </Svg>
-        <View style={styles.ringCenter}>
-          <Text style={[styles.ringValue, { color }]}>{value}</Text>
-          {sublabel && <Text style={styles.ringSublabel}>{sublabel}</Text>}
-        </View>
-      </View>
-      <Text style={styles.ringLabel}>{label}</Text>
-    </View>
-  )
+interface EnteredValue {
+  value: string
+  unit: string
 }
 
-function SupplementItem({ name, dose, checked, onToggle }: {
-  name: string; dose: string; checked: boolean; onToggle: () => void
+// ── Scan-Banner ────────────────────────────────────────────────────
+function ScanBanner({
+  onScanCamera,
+  onScanGallery,
+  scanning,
+  scanResult,
+}: {
+  onScanCamera: () => void
+  onScanGallery: () => void
+  scanning: boolean
+  scanResult: { count: number; confidence: string } | null
 }) {
   return (
-    <TouchableOpacity style={styles.supplementRow} onPress={onToggle}>
-      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-        {checked && <Text style={styles.checkmark}>✓</Text>}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.supplementName, checked && styles.supplementNameDone]}>{name}</Text>
-        <Text style={styles.supplementDose}>{dose}</Text>
-      </View>
-    </TouchableOpacity>
-  )
-}
-
-function MacroBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const pct = Math.min((value / max) * 100, 100)
-  return (
-    <View style={styles.macroItem}>
-      <View style={styles.macroHeader}>
-        <Text style={styles.macroLabel}>{label}</Text>
-        <Text style={styles.macroValue}>{value}<Text style={styles.macroMax}>/{max}g</Text></Text>
-      </View>
-      <View style={styles.macroTrack}>
-        <View style={[styles.macroFill, { width: `${pct}%`, backgroundColor: color }]} />
-      </View>
-    </View>
-  )
-}
-
-function countAbnormalValues(values: Record<string, { value: number; unit: string }>, gender: string) {
-  let count = 0
-  for (const [id, entry] of Object.entries(values)) {
-    const def = BLOOD_VALUES.find(b => b.id === id)
-    if (!def?.referenceRanges) continue
-    const range = def.referenceRanges[gender as 'male' | 'female'] ?? def.referenceRanges.all
-    if (!range) continue
-    if (entry.value < range.min || entry.value > range.max) count++
-  }
-  return count
-}
-
-export default function Home() {
-  const { profile, calorieGoal } = useProfile()
-  const { uid } = useAuth()
-
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [lastBloodTest, setLastBloodTest] = useState<{ date: string; abnormal: number; total: number } | null>(null)
-  const [supplements, setSupplements] = useState<{ id: string; name: string; dose: string; unit: string; checked: boolean }[]>([])
-  const [todayTraining, setTodayTraining] = useState<{ id: string; label: string; duration: number; intensity: string }[]>([])
-  const [todayNutrition, setTodayNutrition] = useState<{ calories: number; protein: number; carbs: number; fat: number } | null>(null)
-
-  const today = new Date().toISOString().split('T')[0]
-
-  const loadData = useCallback(async () => {
-    if (!uid) return
-    try {
-      const bloodSnap = await getDocs(
-        query(collection(db, 'users', uid, 'bloodTests'), orderBy('createdAt', 'desc'), limit(1))
-      )
-      if (!bloodSnap.empty) {
-        const doc = bloodSnap.docs[0].data()
-        const total = Object.keys(doc.values || {}).length
-        const abnormal = countAbnormalValues(doc.values || {}, profile.gender ?? 'male')
-        setLastBloodTest({ date: doc.date, abnormal, total })
-      } else {
-        setLastBloodTest(null)
-      }
-
-      const suppSnap = await getDocs(
-        query(collection(db, 'users', uid, 'supplements'), orderBy('createdAt', 'desc'))
-      )
-      setSupplements(prev => {
-        const checkedMap = Object.fromEntries(prev.map(s => [s.id, s.checked]))
-        return suppSnap.docs.map(d => ({
-          id: d.id,
-          name: d.data().name,
-          dose: `${d.data().dose ?? ''} ${d.data().unit ?? ''}`.trim(),
-          unit: d.data().unit ?? '',
-          checked: checkedMap[d.id] ?? false,
-        }))
-      })
-
-      const trainSnap = await getDocs(
-        query(collection(db, 'users', uid, 'training'), where('date', '==', today))
-      )
-      setTodayTraining(trainSnap.docs.map(d => ({
-        id: d.id,
-        label: d.data().label,
-        duration: d.data().duration,
-        intensity: d.data().intensity,
-      })))
-
-      const nutritionSnap = await getDocs(
-        query(collection(db, 'users', uid, 'nutrition'), where('date', '==', today))
-      )
-      if (!nutritionSnap.empty) {
-        const totals = nutritionSnap.docs.reduce((acc, d) => {
-          const data = d.data()
-          return {
-            calories: acc.calories + (data.calories ?? data.kcal ?? 0),
-            protein: acc.protein + (data.protein ?? 0),
-            carbs: acc.carbs + (data.carbs ?? 0),
-            fat: acc.fat + (data.fat ?? 0),
-          }
-        }, { calories: 0, protein: 0, carbs: 0, fat: 0 })
-        setTodayNutrition(totals)
-      } else {
-        setTodayNutrition(null)
-      }
-    } catch (e) {
-      console.error('Fehler beim Laden:', e)
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [uid, profile.gender, today])
-
-  useEffect(() => { loadData() }, [loadData])
-
-  const onRefresh = () => { setRefreshing(true); loadData() }
-  const toggleSupplement = (id: string) =>
-    setSupplements(prev => prev.map(s => s.id === id ? { ...s, checked: !s.checked } : s))
-
-  const greeting = () => {
-    const h = new Date().getHours()
-    if (h < 12) return 'Guten Morgen'
-    if (h < 18) return 'Guten Tag'
-    return 'Guten Abend'
-  }
-
-  const dateStr = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
-  const supplementsDone = supplements.filter(s => s.checked).length
-
-  // Makro-Ziele basierend auf Kalorienziel
-  const proteinGoal = Math.round(calorieGoal * 0.30 / 4)
-  const carbsGoal   = Math.round(calorieGoal * 0.45 / 4)
-  const fatGoal     = Math.round(calorieGoal * 0.25 / 9)
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={BRAND} />
-      </View>
-    )
-  }
-
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND} />}
-    >
-      {/* ── Header ── */}
-      <View style={styles.header}>
+    <View style={scanStyles.container}>
+      <View style={scanStyles.header}>
         <View>
-          <Text style={styles.greeting}>{greeting()}{profile.name ? `, ${profile.name}` : ''} 👋</Text>
-          <Text style={styles.date}>{dateStr}</Text>
+          <Text style={scanStyles.title}>📸 Laborbefund scannen</Text>
+          <Text style={scanStyles.subtitle}>KI liest deine Werte automatisch aus</Text>
         </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{profile.name ? profile.name[0].toUpperCase() : '?'}</Text>
-        </View>
+        {scanResult && (
+          <View style={scanStyles.badge}>
+            <Text style={scanStyles.badgeText}>✓ {scanResult.count} erkannt</Text>
+          </View>
+        )}
       </View>
 
-      {/* ── Bluttest Banner ── */}
-      {lastBloodTest ? (
-        <TouchableOpacity
-          style={styles.bloodCard}
-          activeOpacity={0.85}
-          onPress={() => router.push('/(tabs)/analysis')}
-        >
-          <View style={styles.bloodCardLeft}>
-            <Text style={styles.bloodCardLabel}>Letzter Bluttest</Text>
-            <Text style={styles.bloodCardDate}>{lastBloodTest.date}</Text>
-            {lastBloodTest.abnormal > 0 ? (
-              <View style={styles.bloodCardBadge}>
-                <Text style={styles.bloodCardBadgeText}>
-                  ⚠️  {lastBloodTest.abnormal} von {lastBloodTest.total} Werten auffällig
-                </Text>
-              </View>
-            ) : (
-              <View style={[styles.bloodCardBadge, { backgroundColor: 'rgba(52,211,153,0.25)' }]}>
-                <Text style={styles.bloodCardBadgeText}>✅ Alle {lastBloodTest.total} Werte im Normbereich</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.bloodCardArrow}>KI-Analyse →</Text>
-        </TouchableOpacity>
+      {scanning ? (
+        <View style={scanStyles.loadingRow}>
+          <ActivityIndicator color={BRAND} size="small" />
+          <Text style={scanStyles.loadingText}>KI analysiert Befund...</Text>
+        </View>
       ) : (
-        <TouchableOpacity
-          style={[styles.bloodCard, { backgroundColor: '#f3f4f6' }]}
-          activeOpacity={0.85}
-          onPress={() => router.push('/(tabs)/add')}
-        >
-          <View style={styles.bloodCardLeft}>
-            <Text style={[styles.bloodCardLabel, { color: '#9ca3af' }]}>Noch kein Bluttest</Text>
-            <Text style={[styles.bloodCardDate, { color: '#6b7280' }]}>Jetzt eintragen</Text>
-          </View>
-          <Text style={[styles.bloodCardArrow, { color: BRAND }]}>+ Hinzufügen →</Text>
-        </TouchableOpacity>
+        <View style={scanStyles.btnRow}>
+          <TouchableOpacity style={scanStyles.btn} onPress={onScanCamera}>
+            <Text style={scanStyles.btnIcon}>📷</Text>
+            <Text style={scanStyles.btnText}>Kamera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={scanStyles.btn} onPress={onScanGallery}>
+            <Text style={scanStyles.btnIcon}>🖼️</Text>
+            <Text style={scanStyles.btnText}>Galerie</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
-      {/* ── Ernährung ── */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>🥗 Ernährung heute</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/add')}>
-            <Text style={styles.cardAction}>+ Eintragen</Text>
-          </TouchableOpacity>
-        </View>
-        {todayNutrition ? (
-          <>
-            <View style={styles.calorieRow}>
-              <RingProgress
-                value={todayNutrition.calories}
-                max={calorieGoal}
-                size={110}
-                stroke={10}
-                color={BRAND}
-                label="kcal"
-                sublabel={`/${calorieGoal}`}
-              />
-              <View style={styles.macros}>
-                <MacroBar label="Protein" value={todayNutrition.protein} max={proteinGoal} color="#f87171" />
-                <MacroBar label="Kohlenhydrate" value={todayNutrition.carbs} max={carbsGoal} color="#fbbf24" />
-                <MacroBar label="Fett" value={todayNutrition.fat} max={fatGoal} color="#34d399" />
-              </View>
-            </View>
-            <View style={styles.calorieFooter}>
-              <View style={styles.calorieInfo}>
-                <Text style={styles.calorieInfoValue}>{todayNutrition.calories}</Text>
-                <Text style={styles.calorieInfoLabel}>gegessen</Text>
-              </View>
-              <View style={styles.calorieDivider} />
-              <View style={styles.calorieInfo}>
-                <Text style={[styles.calorieInfoValue, { color: BRAND }]}>
-                  {Math.max(calorieGoal - todayNutrition.calories, 0)}
-                </Text>
-                <Text style={styles.calorieInfoLabel}>verbleibend</Text>
-              </View>
-              <View style={styles.calorieDivider} />
-              <View style={styles.calorieInfo}>
-                <Text style={styles.calorieInfoValue}>{calorieGoal}</Text>
-                <Text style={styles.calorieInfoLabel}>Ziel</Text>
-              </View>
-            </View>
-          </>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>Noch keine Mahlzeiten heute</Text>
-            <Text style={styles.emptyStateSub}>Trage deine erste Mahlzeit ein</Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Supplements ── */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>💊 Supplements</Text>
-          <Text style={styles.cardSubtitle}>{supplementsDone}/{supplements.length} heute</Text>
-        </View>
-        {supplements.length > 0 ? (
-          <>
-            <View style={styles.suppProgressTrack}>
-              <View style={[styles.suppProgressFill,
-                { width: supplements.length > 0 ? `${(supplementsDone / supplements.length) * 100}%` : '0%' }]} />
-            </View>
-            <View style={styles.supplementList}>
-              {supplements.map(s => (
-                <SupplementItem key={s.id} name={s.name} dose={s.dose}
-                  checked={s.checked} onToggle={() => toggleSupplement(s.id)} />
-              ))}
-            </View>
-          </>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>Keine Supplements eingetragen</Text>
-            <Text style={styles.emptyStateSub}>Füge deine Supplements unter + hinzu</Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Training ── */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>🏋️ Training heute</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/add')}>
-            <Text style={styles.cardAction}>+ Eintragen</Text>
-          </TouchableOpacity>
-        </View>
-        {todayTraining.length > 0 ? (
-          <View style={{ gap: 8 }}>
-            {todayTraining.map(t => (
-              <View key={t.id} style={styles.trainingItem}>
-                <View style={styles.trainingItemLeft}>
-                  <Text style={styles.trainingItemLabel}>{t.label}</Text>
-                  <Text style={styles.trainingItemSub}>{t.intensity}</Text>
-                </View>
-                <Text style={styles.trainingItemDuration}>{t.duration} Min.</Text>
-              </View>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>Noch kein Training heute</Text>
-            <Text style={styles.emptyStateSub}>Tippe + Eintragen um dein Training hinzuzufügen</Text>
-          </View>
-        )}
-      </View>
-    </ScrollView>
+      {scanResult && (
+        <Text style={scanStyles.hint}>
+          {scanResult.confidence === 'high'
+            ? '✅ Hohe Erkennungsgenauigkeit – bitte trotzdem kurz prüfen'
+            : '⚠️ Bitte alle Werte überprüfen und ggf. korrigieren'}
+        </Text>
+      )}
+    </View>
   )
 }
 
+// ── Main Component ────────────────────────────────────────────────
+interface Props {
+  onClose: () => void
+  docId?: string
+  initialValues?: Record<string, { value: number; unit: string }>
+  initialDate?: string
+  initialNote?: string
+}
+
+export default function AddBloodValues({ onClose, docId, initialValues, initialDate, initialNote }: Props) {
+  const isEditing = !!docId
+  const { profile } = useProfile()
+  const { uid } = useAuth()
+  const [enteredValues, setEnteredValues] = useState<Record<string, EnteredValue>>(
+    initialValues
+      ? Object.fromEntries(
+          Object.entries(initialValues).map(([k, v]) => [k, { value: v.value.toString(), unit: v.unit }])
+        )
+      : {}
+  )
+  const [date, setDate] = useState(initialDate ?? new Date().toISOString().split('T')[0])
+  const [note, setNote] = useState(initialNote ?? '')
+  const [saving, setSaving] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<{ count: number; confidence: string } | null>(null)
+  const [unitPickerFor, setUnitPickerFor] = useState<BloodValue | null>(null)
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(
+    { '🩸 Blutbild': true }
+  )
+
+  const gender = profile.gender ?? 'male'
+
+  // Beim Bearbeiten: Kategorien der vorhandenen Werte aufklappen
+  React.useEffect(() => {
+    if (initialValues) {
+      expandCategoriesForValues(Object.keys(initialValues))
+    }
+  }, [])
+  const valuesByCategory = useMemo(() => getValuesByCategory(gender), [gender])
+  const filledCount = Object.values(enteredValues).filter((v) => v.value.trim() !== '').length
+
+  // ── Scan-Logik ──────────────────────────────────────────────────
+
+  const handleScan = async (source: 'camera' | 'gallery') => {
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync()
+      if (status !== 'granted') {
+        Alert.alert('Keine Berechtigung', 'Kamera-Zugriff ist erforderlich.')
+        return
+      }
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 1,
+          allowsEditing: true,
+          aspect: [3, 4],
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 1,
+        })
+
+    if (result.canceled || !result.assets?.[0]) return
+
+    const asset = result.assets[0]
+
+    setScanning(true)
+    try {
+      // Bild auf max. 1000px verkleinern – reduziert ~3MB auf ~150KB
+      const compressed = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1000 } }],
+        {
+          compress: 0.5,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        }
+      )
+
+      if (!compressed.base64) {
+        throw new Error('Bild konnte nicht komprimiert werden')
+      }
+
+      const scan = await scanBloodDocument(compressed.base64, 'image/jpeg')
+
+      if (scan.detectedCount === 0) {
+        Alert.alert(
+          'Keine Werte erkannt',
+          'Gemini konnte keine Laborwerte im Bild finden.\n\nTipps:\n• Gutes Licht verwenden\n• Dokument gerade halten\n• Ganzen Befund abfotografieren'
+        )
+        return
+      }
+
+      setEnteredValues(prev => ({ ...prev, ...scan.extractedValues }))
+      expandCategoriesForValues(Object.keys(scan.extractedValues))
+      setScanResult({ count: scan.detectedCount, confidence: scan.confidence })
+
+      Alert.alert(
+        `✅ ${scan.detectedCount} Werte erkannt`,
+        'Die Felder wurden automatisch ausgefüllt.\nBitte kontrolliere und ergänze die Werte.'
+      )
+    } catch (e: any) {
+      Alert.alert('Scan fehlgeschlagen', e.message ?? 'Unbekannter Fehler')
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const expandCategoriesForValues = (valueIds: string[]) => {
+    const updates: Record<string, boolean> = {}
+    BLOOD_VALUE_CATEGORIES.forEach(cat => {
+      const values = valuesByCategory[cat]
+      if (values?.some(bv => valueIds.includes(bv.id))) {
+        updates[cat] = true
+      }
+    })
+    setExpandedCategories(prev => ({ ...prev, ...updates }))
+  }
+
+  // ── Bestehende Handlers ─────────────────────────────────────────
+
+  const handleValueChange = (id: string, text: string, defaultUnit: string) => {
+    setEnteredValues((prev) => ({
+      ...prev,
+      [id]: { value: text, unit: prev[id]?.unit ?? defaultUnit },
+    }))
+  }
+
+  const handleUnitChange = (id: string, unit: string) => {
+    setEnteredValues((prev) => ({
+      ...prev,
+      [id]: { value: prev[id]?.value ?? '', unit },
+    }))
+    setUnitPickerFor(null)
+  }
+
+  const toggleCategory = (category: string) => {
+    setExpandedCategories((prev) => ({ ...prev, [category]: !prev[category] }))
+  }
+
+  const getValueColor = (bv: BloodValue, inputValue: string): string => {
+    if (!inputValue) return '#1a1a2e'
+    const ref = bv.referenceRanges
+    if (!ref) return '#1a1a2e'
+    const range = ref[gender as 'male' | 'female'] ?? ref.all
+    if (!range) return '#1a1a2e'
+    const val = parseFloat(inputValue.replace(',', '.'))
+    if (isNaN(val)) return '#1a1a2e'
+    if (val < range.min || val > range.max) return '#f87171'
+    return '#34d399'
+  }
+
+  const getReferenceLabel = (bv: BloodValue): string | null => {
+    const ref = bv.referenceRanges
+    if (!ref) return null
+    const range = ref[gender as 'male' | 'female'] ?? ref.all
+    if (!range) return null
+    return `${range.min}–${range.max}`
+  }
+
+  const isValidDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d))
+
+  const handleSave = async () => {
+    if (!uid) { Alert.alert('Fehler', 'Nicht eingeloggt.'); return }
+    if (filledCount === 0) {
+      Alert.alert('Keine Werte', 'Bitte trage mindestens einen Wert ein.')
+      return
+    }
+    if (!isValidDate(date)) {
+      Alert.alert('Ungültiges Datum', 'Bitte gib das Datum im Format JJJJ-MM-TT ein, z.B. 2024-03-15.')
+      return
+    }
+    setSaving(true)
+    try {
+      const values: Record<string, { value: number; unit: string }> = {}
+      Object.entries(enteredValues).forEach(([id, entry]) => {
+        if (entry.value.trim()) {
+          const parsed = parseFloat(entry.value.replace(',', '.'))
+          if (!isNaN(parsed)) values[id] = { value: parsed, unit: entry.unit }
+        }
+      })
+      if (isEditing) {
+        await updateDoc(doc(db, 'users', uid, 'bloodTests', docId), {
+          date,
+          note: note.trim(),
+          gender,
+          cyclePhase: profile.cyclePhase,
+          values,
+          scannedByAI: scanResult !== null,
+        })
+        Alert.alert('✅ Aktualisiert!', `${Object.keys(values).length} Wert(e) aktualisiert.`)
+      } else {
+        await addDoc(collection(db, 'users', uid, 'bloodTests'), {
+          date,
+          note: note.trim(),
+          gender,
+          cyclePhase: profile.cyclePhase,
+          values,
+          scannedByAI: scanResult !== null,
+          createdAt: serverTimestamp(),
+        })
+        Alert.alert('✅ Gespeichert!', `${Object.keys(values).length} Wert(e) gespeichert.`)
+      }
+      onClose()
+    } catch (e) {
+      Alert.alert('Fehler', 'Speichern fehlgeschlagen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────
+
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        <ScanBanner
+          onScanCamera={() => handleScan('camera')}
+          onScanGallery={() => handleScan('gallery')}
+          scanning={scanning}
+          scanResult={scanResult}
+        />
+
+        <View style={styles.section}>
+          <Text style={styles.label}>📅 Datum der Blutabnahme</Text>
+          <TextInput
+            style={styles.input}
+            value={date}
+            onChangeText={setDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor="#9ca3af"
+          />
+        </View>
+
+        {BLOOD_VALUE_CATEGORIES.map((category) => {
+          const values = valuesByCategory[category]
+          if (!values || values.length === 0) return null
+          const isExpanded = expandedCategories[category] ?? false
+          const filledInCategory = values.filter(bv => enteredValues[bv.id]?.value.trim()).length
+
+          return (
+            <View key={category} style={styles.categoryBlock}>
+              <TouchableOpacity
+                style={styles.categoryHeader}
+                onPress={() => toggleCategory(category)}
+              >
+                <Text style={styles.categoryTitle}>{category}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {filledInCategory > 0 && (
+                    <View style={styles.filledBadge}>
+                      <Text style={styles.filledBadgeText}>{filledInCategory}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.chevron}>{isExpanded ? '▲' : '▼'}</Text>
+                </View>
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <View style={styles.valuesList}>
+                  {values.map((bv) => {
+                    const entry = enteredValues[bv.id]
+                    const currentUnit = entry?.unit ?? bv.defaultUnit
+                    const currentValue = entry?.value ?? ''
+                    const refLabel = getReferenceLabel(bv)
+                    const valueColor = getValueColor(bv, currentValue)
+                    const wasScanned = scanResult && entry?.value
+
+                    return (
+                      <View key={bv.id} style={styles.valueRow}>
+                        <View style={styles.valueMeta}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={styles.valueName}>
+                              {bv.name}{bv.cycleDependent ? ' 🔄' : ''}
+                            </Text>
+                            {wasScanned && (
+                              <Text style={styles.scannedDot}>●</Text>
+                            )}
+                          </View>
+                          {refLabel && (
+                            <Text style={styles.refLabel}>
+                              Ref: {refLabel} {currentUnit}
+                            </Text>
+                          )}
+                        </View>
+                        <View style={styles.inputRow}>
+                          <TextInput
+                            style={[styles.valueInput, { color: valueColor }]}
+                            value={currentValue}
+                            onChangeText={(t) => handleValueChange(bv.id, t, bv.defaultUnit)}
+                            placeholder="–"
+                            placeholderTextColor="#d1d5db"
+                            keyboardType="decimal-pad"
+                          />
+                          {bv.units.length > 1 ? (
+                            <TouchableOpacity
+                              style={styles.unitBtn}
+                              onPress={() => setUnitPickerFor(bv)}
+                            >
+                              <Text style={styles.unitBtnText}>{currentUnit} ▾</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <Text style={styles.unitStatic}>{currentUnit}</Text>
+                          )}
+                        </View>
+                      </View>
+                    )
+                  })}
+                </View>
+              )}
+            </View>
+          )
+        })}
+
+        <View style={styles.section}>
+          <Text style={styles.label}>📝 Notiz</Text>
+          <TextInput
+            style={[styles.input, { height: 70, textAlignVertical: 'top' }]}
+            value={note}
+            onChangeText={setNote}
+            placeholder="z.B. Nüchternblut..."
+            placeholderTextColor="#9ca3af"
+            multiline
+          />
+        </View>
+      </ScrollView>
+
+      <SaveButton
+        onPress={handleSave}
+        label={filledCount > 0
+          ? (isEditing ? '💾 Änderungen speichern' : `💾 ${filledCount} Wert${filledCount > 1 ? 'e' : ''} speichern`)
+          : 'Noch keine Werte eingetragen'}
+        loading={saving}
+        disabled={filledCount === 0}
+      />
+
+      <Modal visible={!!unitPickerFor} transparent animationType="slide">
+        <TouchableOpacity style={styles.overlay} onPress={() => setUnitPickerFor(null)}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Einheit wählen</Text>
+            <Text style={styles.sheetSubtitle}>{unitPickerFor?.name}</Text>
+            {unitPickerFor?.units.map((unit) => (
+              <TouchableOpacity
+                key={unit}
+                style={styles.unitOption}
+                onPress={() => handleUnitChange(unitPickerFor.id, unit)}
+              >
+                <Text style={styles.unitOptionText}>{unit || '–'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  )
+}
+
+const scanStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#eef1ff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#d4dcff',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  title: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
+  subtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  badge: {
+    backgroundColor: '#34d399',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  badgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  btn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: BRAND,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  btnIcon: { fontSize: 16 },
+  btnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  loadingText: { fontSize: 14, color: '#6b7280' },
+  hint: { fontSize: 11, color: '#6b7280', marginTop: 10, lineHeight: 16 },
+})
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f7f8fc' },
-  content: { padding: 20, paddingBottom: 100 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f8fc' },
-
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 8 },
-  greeting: { fontSize: 22, fontWeight: '800', color: '#1a1a2e', letterSpacing: -0.5 },
-  date: { fontSize: 13, color: '#9ca3af', marginTop: 2, fontWeight: '500' },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-
-  bloodCard: { backgroundColor: BRAND, borderRadius: 16, padding: 18, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: BRAND, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 14, elevation: 8 },
-  bloodCardLeft: { flex: 1 },
-  bloodCardLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
-  bloodCardDate: { fontSize: 20, color: '#fff', fontWeight: '800', marginTop: 2, marginBottom: 8 },
-  bloodCardBadge: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' },
-  bloodCardBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  bloodCardArrow: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700' },
-
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16, shadowColor: '#84a7ff', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
-  cardSubtitle: { fontSize: 13, color: '#9ca3af', fontWeight: '500' },
-  cardAction: { fontSize: 13, color: BRAND, fontWeight: '700' },
-
-  calorieRow: { flexDirection: 'row', alignItems: 'center', gap: 20, marginBottom: 16 },
-  ringCenter: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  ringValue: { fontSize: 18, fontWeight: '800' },
-  ringSublabel: { fontSize: 10, color: '#9ca3af', fontWeight: '500' },
-  ringLabel: { fontSize: 12, color: '#9ca3af', marginTop: 4, fontWeight: '500' },
-  macros: { flex: 1, gap: 10 },
-  macroItem: {},
-  macroHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  macroLabel: { fontSize: 12, color: '#6b7280', fontWeight: '500' },
-  macroValue: { fontSize: 12, color: '#1a1a2e', fontWeight: '700' },
-  macroMax: { color: '#9ca3af', fontWeight: '400' },
-  macroTrack: { height: 5, backgroundColor: '#f3f4f6', borderRadius: 3, overflow: 'hidden' },
-  macroFill: { height: '100%', borderRadius: 3 },
-  calorieFooter: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 14, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
-  calorieInfo: { alignItems: 'center' },
-  calorieInfoValue: { fontSize: 18, fontWeight: '800', color: '#1a1a2e' },
-  calorieInfoLabel: { fontSize: 11, color: '#9ca3af', fontWeight: '500', marginTop: 2 },
-  calorieDivider: { width: 1, height: '100%', backgroundColor: '#f3f4f6' },
-
-  suppProgressTrack: { height: 5, backgroundColor: '#f3f4f6', borderRadius: 3, marginBottom: 14, overflow: 'hidden' },
-  suppProgressFill: { height: '100%', backgroundColor: BRAND, borderRadius: 3 },
-  supplementList: { gap: 2 },
-  supplementRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12, borderBottomWidth: 1, borderBottomColor: '#f9f9f9' },
-  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: '#d1d5db', alignItems: 'center', justifyContent: 'center' },
-  checkboxChecked: { backgroundColor: BRAND, borderColor: BRAND },
-  checkmark: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  supplementName: { fontSize: 14, fontWeight: '600', color: '#1a1a2e' },
-  supplementNameDone: { color: '#9ca3af', textDecorationLine: 'line-through' },
-  supplementDose: { fontSize: 12, color: '#9ca3af', marginTop: 1 },
-
-  trainingItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: BRAND_LIGHT, borderRadius: 12, padding: 14 },
-  trainingItemLeft: {},
-  trainingItemLabel: { fontSize: 14, fontWeight: '700', color: '#1a1a2e' },
-  trainingItemSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
-  trainingItemDuration: { fontSize: 16, fontWeight: '800', color: BRAND },
-
-  emptyState: { alignItems: 'center', paddingVertical: 20 },
-  emptyStateText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
-  emptyStateSub: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  content: { padding: 16, paddingBottom: 100 },
+  section: { marginBottom: 16 },
+  label: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 },
+  input: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  categoryBlock: { marginBottom: 10 },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  categoryTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
+  chevron: { fontSize: 12, color: '#9ca3af' },
+  filledBadge: {
+    backgroundColor: BRAND,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  filledBadgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
+  valuesList: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 2,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    overflow: 'hidden',
+  },
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f9fafb',
+  },
+  valueMeta: { flex: 1, marginRight: 10 },
+  valueName: { fontSize: 14, color: '#1a1a2e', fontWeight: '500' },
+  scannedDot: { fontSize: 8, color: BRAND },
+  refLabel: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  valueInput: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    width: 72,
+    textAlign: 'right',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  unitBtn: {
+    backgroundColor: '#eef1ff',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  unitBtnText: { color: BRAND, fontSize: 11, fontWeight: '700' },
+  unitStatic: { fontSize: 11, color: '#9ca3af', paddingHorizontal: 4 },
+  footer: {
+    padding: 16,
+    paddingBottom: 32,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  saveBtn: {
+    backgroundColor: BRAND,
+    padding: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+  },
+  saveBtnDisabled: { backgroundColor: '#e5e7eb', shadowOpacity: 0 },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  overlay: { flex: 1, backgroundColor: '#00000066', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 44 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#1a1a2e', marginBottom: 4 },
+  sheetSubtitle: { fontSize: 13, color: '#9ca3af', marginBottom: 16 },
+  unitOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f9fafb' },
+  unitOptionText: { fontSize: 16, color: '#1a1a2e', fontWeight: '500' },
 })

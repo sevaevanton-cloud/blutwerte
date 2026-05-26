@@ -12,6 +12,7 @@ import AddBloodValues from '../../components/add/AddBloodValues'
 import AddNutrition from '../../components/add/AddNutrition'
 import AddSupplement from '../../components/add/AddSupplement'
 import AddTraining from '../../components/add/AddTraining'
+import ModalHeader, { modalSharedStyles } from '../../components/ui/ModalHeader'
 import { BRAND } from '../../constants/theme'
 
     
@@ -93,20 +94,11 @@ export default function Add() {
         onRequestClose={() => setActiveModal(null)}
       >
         <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.modalTitle}>
-                {activeCategory?.icon} {activeCategory?.title}
-              </Text>
-              <Text style={styles.modalSubtitle}>{activeCategory?.subtitle}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={() => setActiveModal(null)}
-            >
-              <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
-          </View>
+          <ModalHeader
+            title={`${activeCategory?.icon ?? ''} ${activeCategory?.title ?? ''}`}
+            subtitle={activeCategory?.subtitle}
+            onClose={() => setActiveModal(null)}
+          />
 
           {activeModal === 'blood' && (
             <AddBloodValues onClose={() => setActiveModal(null)} />
@@ -177,26 +169,5 @@ const styles = StyleSheet.create({
     borderLeftColor: BRAND,
   },
   hintText: { fontSize: 13, color: '#4b5563', lineHeight: 20 },
-  modal: { flex: 1, backgroundColor: '#f7f8fc' },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 24,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1a1a2e' },
-  modalSubtitle: { fontSize: 13, color: '#9ca3af', marginTop: 2 },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f3f4f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: { fontSize: 14, color: '#6b7280', fontWeight: '700' },
+  modal: modalSharedStyles.modal,
 })
