@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import AddBloodValues from '../../components/add/AddBloodValues'
 import AddNutrition from '../../components/add/AddNutrition'
 import AddSupplement from '../../components/add/AddSupplement'
@@ -57,7 +58,7 @@ export default function Add() {
   const activeCategory = CATEGORIES.find((c) => c.id === activeModal)
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Eintragen</Text>
         <Text style={styles.subtitle}>Was möchtest du heute erfassen?</Text>
@@ -114,7 +115,7 @@ export default function Add() {
           )}
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   )
 }
 
