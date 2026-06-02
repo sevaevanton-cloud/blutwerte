@@ -73,7 +73,7 @@ export default function Analysis() {
     }
   }
 
-  const handleAnalyze = async () => {
+  const runAnalysis = async () => {
     setLoading(true)
     try {
       const data = await fetchData()
@@ -112,6 +112,25 @@ export default function Analysis() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // DSGVO-Pflicht: Bestätigungs-Dialog vor jeder KI-Analyse (Art. 13 DSGVO)
+  const handleAnalyze = () => {
+    Alert.alert(
+      '🤖 Daten an Google Gemini senden?',
+      'Für die KI-Analyse werden folgende Daten an die Google Gemini API übertragen:\n\n' +
+      '• Deine Blutwerte (letzte 3 Einträge)\n' +
+      '• Ernährungseinträge (letzte 20)\n' +
+      '• Supplements (letzte 20)\n' +
+      '• Training (letzte 10 Einträge)\n' +
+      '• Alter, Geschlecht & Zyklusphase\n\n' +
+      'Dein Name wird NICHT übertragen (Pseudonymisierung).\n\n' +
+      'Google verarbeitet diese Daten gemäß der Google Cloud Datenschutzrichtlinie.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        { text: 'Analyse starten', style: 'default', onPress: runAnalysis },
+      ]
+    )
   }
 
   return (

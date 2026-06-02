@@ -1,5 +1,7 @@
 // src/app/(tabs)/profile.tsx
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
+import { collection, deleteDoc, getDocs } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
   Alert, ScrollView, StyleSheet, Text,
@@ -7,8 +9,10 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import AccountUpgrade from '../../components/profile/AccountUpgrade'
+import { db } from '../../config/firebase'
 import { BRAND, BRAND_LIGHT } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
+import { useConsent } from '../../context/ConsentContext'
 import { ActivityLevel, Gender, useProfile } from '../../context/ProfileContext'
 import { ACTIVITY_LEVELS, calculateTDEE } from '../../utils/nutrition'
 
@@ -20,9 +24,18 @@ const CYCLE_PHASES = [
   { id: 'unknown',      label: '❓ Unbekannt',       days: '' },
 ]
 
+/** Löscht alle Dokumente einer Subcollection */
+async function deleteSubcollection(uid: string, subcollection: string) {
+  const colRef = collection(db, 'users', uid, subcollection)
+  const snap = await getDocs(colRef)
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)))
+}
+
 export default function Profile() {
   const { profile, updateProfile, calorieGoal } = useProfile()
-  const { isAnonymous, signOut } = useAuth()
+  const { isAnonymous, uid, signOut } = useAuth()
+  const { revokeConsent } = useConsent()
+  const [deletingData, setDeletingData] = useState(false)
 
   const handleSignOut = () => {
     Alert.alert(
@@ -31,9 +44,79 @@ export default function Profile() {
       [
         { text: 'Abbrechen', style: 'cancel' },
         { text: 'Abmelden', style: 'destructive', onPress: async () => {
+          await revokeConsent()  // Consent zurücksetzen, damit neuer Nutzer Einwilligung sieht
           await signOut()
-          router.replace('/onboarding')
+          router.replace('/consent')
         }},
+      ]
+    )
+  }
+
+  // DSGVO Art. 17 – Recht auf Löschung
+  const handleDeleteAllData = () => {
+    Alert.alert(
+      '🗑️ Alle Daten löschen?',
+      'Hiermit werden alle deine gespeicherten Daten unwiderruflich gelöscht:\n\n' +
+      '• Alle Blutwerte\n' +
+      '• Alle Ernährungseinträge\n' +
+      '• Alle Supplements\n' +
+      '• Alle Trainingseinträge\n' +
+      '• KI-Analyse-Cache\n' +
+      '• Dein Profil\n\n' +
+      'Diese Aktion kann nicht rückgängig gemacht werden.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Alles löschen',
+          style: 'destructive',
+          onPress: async () => {
+            if (!uid) return
+            setDeletingData(true)
+            try {
+              // Alle Subcollections löschen (Profil liegt in users/{uid}/profile/data)
+              await Promise.all([
+                deleteSubcollection(uid, 'bloodTests'),
+                deleteSubcollection(uid, 'nutrition'),
+                deleteSubcollection(uid, 'supplements'),
+                deleteSubcollection(uid, 'training'),
+                deleteSubcollection(uid, 'analysisCache'),
+                deleteSubcollection(uid, 'profile'),
+              ])
+              // Lokalen Profil-Cache aus AsyncStorage löschen
+              await AsyncStorage.removeItem('userProfile')
+              // Einwilligung widerrufen
+              await revokeConsent()
+              Alert.alert('✅ Daten gelöscht', 'Alle deine Daten wurden erfolgreich gelöscht.')
+              router.replace('/consent')
+            } catch (e: any) {
+              Alert.alert('Fehler', `Löschen fehlgeschlagen: ${e.message}`)
+            } finally {
+              setDeletingData(false)
+            }
+          },
+        },
+      ]
+    )
+  }
+
+  // Einwilligung widerrufen (ohne Datenlöschung)
+  const handleRevokeConsent = () => {
+    Alert.alert(
+      '⚠️ Einwilligung widerrufen?',
+      'Deine Einwilligung zur Datenspeicherung und -verarbeitung wird widerrufen. ' +
+      'Du wirst zur Datenschutz-Seite weitergeleitet und kannst die App nicht mehr nutzen, ' +
+      'bis du erneut zustimmst.\n\n' +
+      'Deine bereits gespeicherten Daten bleiben erhalten.',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Einwilligung widerrufen',
+          style: 'destructive',
+          onPress: async () => {
+            await revokeConsent()
+            router.replace('/consent')
+          },
+        },
       ]
     )
   }
@@ -232,6 +315,28 @@ export default function Profile() {
         <Text style={styles.resetButtonText}>↩ Onboarding neu starten</Text>
       </TouchableOpacity>
 
+      {/* ── Datenschutz ── */}
+      <Text style={styles.sectionTitle}>Datenschutz (DSGVO)</Text>
+
+      <TouchableOpacity
+        style={styles.revokeConsentButton}
+        onPress={handleRevokeConsent}
+      >
+        <Text style={styles.revokeConsentButtonText}>⚠️ Einwilligung widerrufen</Text>
+        <Text style={styles.revokeConsentSubtext}>Daten bleiben erhalten – nur Einwilligung wird widerrufen</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.deleteDataButton, deletingData && { opacity: 0.6 }]}
+        onPress={handleDeleteAllData}
+        disabled={deletingData}
+      >
+        <Text style={styles.deleteDataButtonText}>
+          {deletingData ? '⏳ Wird gelöscht…' : '🗑️ Alle Daten löschen (Art. 17 DSGVO)'}
+        </Text>
+        <Text style={styles.deleteDataSubtext}>Löscht alle Gesundheitsdaten unwiderruflich</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
         <Text style={styles.signOutButtonText}>Abmelden</Text>
       </TouchableOpacity>
@@ -285,6 +390,15 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   resetButton: { marginTop: 12, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#e5e7eb' },
   resetButtonText: { color: '#9ca3af', fontSize: 14, fontWeight: '600' },
-  signOutButton: { marginTop: 8, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#fecaca' },
+
+  revokeConsentButton: { marginTop: 8, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#fcd34d', backgroundColor: '#fffbeb' },
+  revokeConsentButtonText: { color: '#b45309', fontSize: 14, fontWeight: '700' },
+  revokeConsentSubtext: { color: '#92400e', fontSize: 11, marginTop: 3 },
+
+  deleteDataButton: { marginTop: 8, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#fecaca', backgroundColor: '#fff5f5' },
+  deleteDataButtonText: { color: '#dc2626', fontSize: 14, fontWeight: '700' },
+  deleteDataSubtext: { color: '#b91c1c', fontSize: 11, marginTop: 3 },
+
+  signOutButton: { marginTop: 8, padding: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#e5e7eb' },
   signOutButtonText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
 })

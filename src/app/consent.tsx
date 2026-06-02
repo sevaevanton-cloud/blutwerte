@@ -2,12 +2,13 @@
 import { router } from 'expo-router'
 import React, { useState } from 'react'
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native'
 import { useConsent } from '../context/ConsentContext'
 
@@ -79,7 +80,10 @@ export default function ConsentScreen() {
           </Text>
           <Text style={styles.cardText}>
             Google verarbeitet diese Daten gemäß der{' '}
-            <Text style={styles.link}>Google Cloud Datenschutzrichtlinie</Text>.
+            <Text
+              style={styles.link}
+              onPress={() => Linking.openURL('https://policies.google.com/privacy')}
+            >Google Cloud Datenschutzrichtlinie</Text>.
             Die KI-Analyse ist freiwillig und kann jederzeit weggelassen werden.
           </Text>
         </View>

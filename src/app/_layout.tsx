@@ -2,6 +2,7 @@ import { Stack } from 'expo-router'
 import React from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { AuthProvider, useAuth } from '../context/AuthContext'
+import { ConsentProvider } from '../context/ConsentContext'
 import { ProfileProvider } from '../context/ProfileContext'
 
 function AppNavigator() {
@@ -17,9 +18,10 @@ function AppNavigator() {
 
   return (
     <Stack>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="index"      options={{ headerShown: false }} />
+      <Stack.Screen name="consent"    options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)"     options={{ headerShown: false }} />
     </Stack>
   )
 }
@@ -27,9 +29,11 @@ function AppNavigator() {
 const RootLayout = () => {
   return (
     <AuthProvider>
-      <ProfileProvider>
-        <AppNavigator />
-      </ProfileProvider>
+      <ConsentProvider>
+        <ProfileProvider>
+          <AppNavigator />
+        </ProfileProvider>
+      </ConsentProvider>
     </AuthProvider>
   )
 }
