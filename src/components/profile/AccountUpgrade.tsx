@@ -1,8 +1,8 @@
 // src/components/profile/AccountUpgrade.tsx
 import React, { useState } from 'react'
 import {
-    ActivityIndicator, Alert, StyleSheet, Text,
-    TextInput, TouchableOpacity, View,
+  ActivityIndicator, Alert, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native'
 import { BRAND } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
@@ -48,6 +48,9 @@ export default function AccountUpgrade() {
     } catch (e: any) {
       if (e.code === 'auth/credential-already-in-use') {
         Alert.alert('Google-Account bereits vergeben', 'Dieser Google-Account ist bereits mit einem anderen Account verknüpft.')
+      } else if (e.message?.includes('Web-Version')) {
+        // Klarer Hinweis wenn auf Native aufgerufen
+        Alert.alert('Nicht verfügbar', e.message)
       } else {
         Alert.alert('Fehler', e.message ?? 'Unbekannter Fehler.')
       }

@@ -1,13 +1,17 @@
 // src/app/(tabs)/history.tsx
-import { collection, getDocs, orderBy, query } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, orderBy, query } from 'firebase/firestore'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
+  Modal,
   ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native'
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
+import AddBloodValues from '../../components/add/AddBloodValues'
+import ModalHeader, { modalSharedStyles } from '../../components/ui/ModalHeader'
 import { db } from '../../config/firebase'
 import { BLOOD_VALUES } from '../../constants/bloodValues'
 import { BRAND } from '../../constants/theme'
@@ -23,6 +27,7 @@ interface BloodTest {
   id: string
   date: string
   values: Record<string, { value: number; unit: string }>
+  note?: string
 }
 
 // ── Mini Line Chart ───────────────────────────────────────────────
@@ -50,12 +55,10 @@ function LineChart({ points, refMin, refMax, unit }: {
   const toY = (v: number) =>
     PAD.top + innerH - ((v - yMin) / (yMax - yMin)) * innerH
 
-  // Build path
   const pathD = points
     .map((p, i) => `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)} ${toY(p.value).toFixed(1)}`)
     .join(' ')
 
-  // Y-axis ticks
   const tickCount = 4
   const ticks = Array.from({ length: tickCount }, (_, i) =>
     yMin + (i / (tickCount - 1)) * (yMax - yMin)
@@ -63,19 +66,10 @@ function LineChart({ points, refMin, refMax, unit }: {
 
   return (
     <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-      {/* Reference range band */}
       {refMin !== undefined && refMax !== undefined && (
-        <Rect
-          x={PAD.left}
-          y={toY(refMax)}
-          width={innerW}
-          height={toY(refMin) - toY(refMax)}
-          fill="#34d399"
-          opacity={0.12}
-        />
+        <Rect x={PAD.left} y={toY(refMax)} width={innerW}
+          height={toY(refMin) - toY(refMax)} fill="#34d399" opacity={0.12} />
       )}
-
-      {/* Ref lines */}
       {refMin !== undefined && (
         <Line x1={PAD.left} y1={toY(refMin)} x2={PAD.left + innerW} y2={toY(refMin)}
           stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" />
@@ -84,16 +78,12 @@ function LineChart({ points, refMin, refMax, unit }: {
         <Line x1={PAD.left} y1={toY(refMax)} x2={PAD.left + innerW} y2={toY(refMax)}
           stroke="#34d399" strokeWidth={1} strokeDasharray="4 3" />
       )}
-
-      {/* Y-axis ticks */}
       {ticks.map((t, i) => (
         <SvgText key={i} x={PAD.left - 6} y={toY(t) + 4}
           fontSize={10} fill="#9ca3af" textAnchor="end">
           {t.toFixed(1)}
         </SvgText>
       ))}
-
-      {/* X-axis dates */}
       {points.map((p, i) => {
         if (points.length > 5 && i % 2 !== 0) return null
         const parts = p.date.split('-')
@@ -105,13 +95,9 @@ function LineChart({ points, refMin, refMax, unit }: {
           </SvgText>
         )
       })}
-
-      {/* Line */}
       {points.length > 1 && (
         <Path d={pathD} fill="none" stroke={BRAND} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       )}
-
-      {/* Dots */}
       {points.map((p, i) => {
         const isAbnormal = (refMin !== undefined && p.value < refMin) || (refMax !== undefined && p.value > refMax)
         return (
@@ -132,8 +118,8 @@ export default function History() {
   const [loading, setLoading] = useState(true)
   const [bloodTests, setBloodTests] = useState<BloodTest[]>([])
   const [selectedId, setSelectedId] = useState<string>('hemoglobin')
+  const [editingTest, setEditingTest] = useState<BloodTest | null>(null)
 
-  // Load all blood tests
   const load = useCallback(async () => {
     if (!uid) return
     try {
@@ -144,6 +130,7 @@ export default function History() {
         id: d.id,
         date: d.data().date,
         values: d.data().values ?? {},
+        note: d.data().note ?? '',
       })))
     } catch (e) {
       console.error(e)
@@ -154,14 +141,33 @@ export default function History() {
 
   useEffect(() => { load() }, [load])
 
-  // Which blood values actually have data?
+  const handleDeleteTest = (testId: string, dateLabel: string) => {
+    Alert.alert(
+      'Bluttest löschen?',
+      `Der Test vom ${dateLabel} und alle zugehörigen Werte werden dauerhaft gelöscht.`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Löschen', style: 'destructive', onPress: async () => {
+            if (!uid) return
+            try {
+              await deleteDoc(doc(db, 'users', uid, 'bloodTests', testId))
+              load()
+            } catch {
+              Alert.alert('Fehler', 'Löschen fehlgeschlagen.')
+            }
+          }
+        },
+      ]
+    )
+  }
+
   const availableValues = useMemo(() => {
     const ids = new Set<string>()
     bloodTests.forEach(t => Object.keys(t.values).forEach(id => ids.add(id)))
     return BLOOD_VALUES.filter(bv => ids.has(bv.id))
   }, [bloodTests])
 
-  // Points for selected value
   const chartPoints = useMemo(() =>
     bloodTests
       .filter(t => t.values[selectedId] !== undefined)
@@ -173,7 +179,6 @@ export default function History() {
   const refRange = selectedDef?.referenceRanges?.[gender as 'male' | 'female'] ?? selectedDef?.referenceRanges?.all
   const unit = chartPoints[0] ? bloodTests.find(t => t.values[selectedId])?.values[selectedId]?.unit ?? selectedDef?.defaultUnit : selectedDef?.defaultUnit
 
-  // Latest value status
   const latestPoint = chartPoints[chartPoints.length - 1]
   const isAbnormal = latestPoint && refRange
     ? latestPoint.value < refRange.min || latestPoint.value > refRange.max
@@ -188,116 +193,149 @@ export default function History() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>📈 Verlauf</Text>
-      <Text style={styles.subtitle}>Deine Blutwerte über Zeit</Text>
+    <>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>📈 Verlauf</Text>
+        <Text style={styles.subtitle}>Deine Blutwerte über Zeit</Text>
 
-      {bloodTests.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyIcon}>🩸</Text>
-          <Text style={styles.emptyTitle}>Noch keine Blutwerte</Text>
-          <Text style={styles.emptySub}>Trage deinen ersten Bluttest unter + ein um den Verlauf zu sehen.</Text>
-        </View>
-      ) : (
-        <>
-          {/* Value Selector */}
-          {availableValues.length > 0 && (
-            <View style={styles.selectorBox}>
-              <Text style={styles.selectorLabel}>Wert auswählen</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pills}>
-                {availableValues.map(bv => (
-                  <TouchableOpacity
-                    key={bv.id}
-                    style={[styles.pill, selectedId === bv.id && styles.pillActive]}
-                    onPress={() => setSelectedId(bv.id)}
-                  >
-                    <Text style={[styles.pillText, selectedId === bv.id && styles.pillTextActive]}>
-                      {bv.shortName ?? bv.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Chart Card */}
-          <View style={styles.card}>
-            <View style={styles.chartHeader}>
-              <View>
-                <Text style={styles.chartTitle}>{selectedDef?.name}</Text>
-                {latestPoint && (
-                  <Text style={[styles.chartLatest, { color: isAbnormal ? '#f87171' : '#34d399' }]}>
-                    Aktuell: {latestPoint.value} {unit} {isAbnormal ? '⚠️' : '✓'}
-                  </Text>
-                )}
-              </View>
-              {refRange && (
-                <View style={styles.refBox}>
-                  <Text style={styles.refLabel}>Normbereich</Text>
-                  <Text style={styles.refValue}>{refRange.min}–{refRange.max} {unit}</Text>
-                </View>
-              )}
-            </View>
-
-            {chartPoints.length >= 1 ? (
-              <LineChart
-                points={chartPoints}
-                refMin={refRange?.min}
-                refMax={refRange?.max}
-                unit={unit ?? ''}
-              />
-            ) : (
-              <View style={styles.noDataBox}>
-                <Text style={styles.noDataText}>Kein Messwert für {selectedDef?.shortName ?? selectedDef?.name}</Text>
+        {bloodTests.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyIcon}>🩸</Text>
+            <Text style={styles.emptyTitle}>Noch keine Blutwerte</Text>
+            <Text style={styles.emptySub}>Trage deinen ersten Bluttest unter + ein um den Verlauf zu sehen.</Text>
+          </View>
+        ) : (
+          <>
+            {availableValues.length > 0 && (
+              <View style={styles.selectorBox}>
+                <Text style={styles.selectorLabel}>Wert auswählen</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pills}>
+                  {availableValues.map(bv => (
+                    <TouchableOpacity
+                      key={bv.id}
+                      style={[styles.pill, selectedId === bv.id && styles.pillActive]}
+                      onPress={() => setSelectedId(bv.id)}
+                    >
+                      <Text style={[styles.pillText, selectedId === bv.id && styles.pillTextActive]}>
+                        {bv.shortName ?? bv.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
             )}
 
-            {/* Legend */}
-            <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: BRAND }]} />
-                <Text style={styles.legendText}>Messwert</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#f87171' }]} />
-                <Text style={styles.legendText}>Auffällig</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#34d399', opacity: 0.5 }]} />
-                <Text style={styles.legendText}>Normbereich</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* History List */}
-          <View style={styles.card}>
-            <Text style={styles.listTitle}>Alle Messungen</Text>
-            {[...bloodTests].reverse().map(test => {
-              const entry = test.values[selectedId]
-              if (!entry) return null
-              const abnormal = refRange
-                ? entry.value < refRange.min || entry.value > refRange.max
-                : false
-              const parts = test.date.split('-')
-              const dateLabel = parts.length === 3
-                ? `${parts[2]}.${parts[1]}.${parts[0]}`
-                : test.date
-              return (
-                <View key={test.id} style={styles.listRow}>
-                  <Text style={styles.listDate}>{dateLabel}</Text>
-                  <Text style={[styles.listValue, { color: abnormal ? '#f87171' : '#34d399' }]}>
-                    {entry.value} {entry.unit}
-                  </Text>
-                  {refRange && (
-                    <Text style={styles.listStatus}>{abnormal ? '⚠️ Auffällig' : '✓ Normal'}</Text>
+            <View style={styles.card}>
+              <View style={styles.chartHeader}>
+                <View>
+                  <Text style={styles.chartTitle}>{selectedDef?.name}</Text>
+                  {latestPoint && (
+                    <Text style={[styles.chartLatest, { color: isAbnormal ? '#f87171' : '#34d399' }]}>
+                      Aktuell: {latestPoint.value} {unit} {isAbnormal ? '⚠️' : '✓'}
+                    </Text>
                   )}
                 </View>
-              )
-            })}
-          </View>
-        </>
-      )}
-    </ScrollView>
+                {refRange && (
+                  <View style={styles.refBox}>
+                    <Text style={styles.refLabel}>Normbereich</Text>
+                    <Text style={styles.refValue}>{refRange.min}–{refRange.max} {unit}</Text>
+                  </View>
+                )}
+              </View>
+
+              {chartPoints.length >= 1 ? (
+                <LineChart points={chartPoints} refMin={refRange?.min} refMax={refRange?.max} unit={unit ?? ''} />
+              ) : (
+                <View style={styles.noDataBox}>
+                  <Text style={styles.noDataText}>Kein Messwert für {selectedDef?.shortName ?? selectedDef?.name}</Text>
+                </View>
+              )}
+
+              <View style={styles.legend}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: BRAND }]} />
+                  <Text style={styles.legendText}>Messwert</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#f87171' }]} />
+                  <Text style={styles.legendText}>Auffällig</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#34d399', opacity: 0.5 }]} />
+                  <Text style={styles.legendText}>Normbereich</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* History List */}
+            <View style={styles.card}>
+              <Text style={styles.listTitle}>Alle Messungen</Text>
+              {[...bloodTests].reverse().map(test => {
+                const entry = test.values[selectedId]
+                if (!entry) return null
+                const abnormal = refRange
+                  ? entry.value < refRange.min || entry.value > refRange.max
+                  : false
+                const parts = test.date.split('-')
+                const dateLabel = parts.length === 3
+                  ? `${parts[2]}.${parts[1]}.${parts[0]}`
+                  : test.date
+                return (
+                  <View key={test.id} style={styles.listRow}>
+                    <Text style={styles.listDate}>{dateLabel}</Text>
+                    <Text style={[styles.listValue, { color: abnormal ? '#f87171' : '#34d399' }]}>
+                      {entry.value} {entry.unit}
+                    </Text>
+                    {refRange && (
+                      <Text style={styles.listStatus}>{abnormal ? '⚠️' : '✓'}</Text>
+                    )}
+                    <View style={styles.rowActions}>
+                      <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={() => setEditingTest(test)}
+                      >
+                        <Text style={styles.actionBtnText}>✏️</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={() => handleDeleteTest(test.id, dateLabel)}
+                      >
+                        <Text style={styles.actionBtnText}>🗑️</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )
+              })}
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal
+        visible={!!editingTest}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditingTest(null)}
+      >
+        <View style={styles.modal}>
+          <ModalHeader
+            title="🩸 Blutwerte bearbeiten"
+            subtitle={editingTest?.date}
+            onClose={() => setEditingTest(null)}
+          />
+          {editingTest && (
+            <AddBloodValues
+              onClose={() => { setEditingTest(null); load() }}
+              docId={editingTest.id}
+              initialValues={editingTest.values}
+              initialDate={editingTest.date}
+              initialNote={editingTest.note}
+            />
+          )}
+        </View>
+      </Modal>
+    </>
   )
 }
 
@@ -340,8 +378,13 @@ const styles = StyleSheet.create({
   legendText: { fontSize: 12, color: '#6b7280', fontWeight: '500' },
 
   listTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', marginBottom: 12 },
-  listRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', gap: 4 },
   listDate: { fontSize: 14, color: '#6b7280', fontWeight: '500', flex: 1 },
   listValue: { fontSize: 15, fontWeight: '700', flex: 1, textAlign: 'center' },
-  listStatus: { fontSize: 12, color: '#9ca3af', flex: 1, textAlign: 'right' },
+  listStatus: { fontSize: 13, flex: 0 },
+  rowActions: { flexDirection: 'row', gap: 4 },
+  actionBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#f3f4f6' },
+  actionBtnText: { fontSize: 13 },
+
+  modal: modalSharedStyles.modal,
 })

@@ -1,7 +1,7 @@
 // src/components/add/AddBloodValues.tsx
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,7 +24,8 @@ import { BRAND } from '../../constants/theme';
 import { useAuth } from '../../context/AuthContext';
 import { useProfile } from '../../context/ProfileContext';
 import { scanBloodDocument } from '../../services/geminiScan';
-'use no memo';
+import DatePickerField from '../ui/DatePickerField';
+import SaveButton from '../ui/SaveButton';
 
 
 interface EnteredValue {
@@ -88,12 +89,27 @@ function ScanBanner({
 }
 
 // ── Main Component ────────────────────────────────────────────────
-export default function AddBloodValues({ onClose }: { onClose: () => void }) {
+interface Props {
+  onClose: () => void
+  docId?: string
+  initialValues?: Record<string, { value: number; unit: string }>
+  initialDate?: string
+  initialNote?: string
+}
+
+export default function AddBloodValues({ onClose, docId, initialValues, initialDate, initialNote }: Props) {
+  const isEditing = !!docId
   const { profile } = useProfile()
   const { uid } = useAuth()
-  const [enteredValues, setEnteredValues] = useState<Record<string, EnteredValue>>({})
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [note, setNote] = useState('')
+  const [enteredValues, setEnteredValues] = useState<Record<string, EnteredValue>>(
+    initialValues
+      ? Object.fromEntries(
+          Object.entries(initialValues).map(([k, v]) => [k, { value: v.value.toString(), unit: v.unit }])
+        )
+      : {}
+  )
+  const [date, setDate] = useState(initialDate ?? new Date().toISOString().split('T')[0])
+  const [note, setNote] = useState(initialNote ?? '')
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{ count: number; confidence: string } | null>(null)
@@ -103,6 +119,13 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
   )
 
   const gender = profile.gender ?? 'male'
+
+  // Beim Bearbeiten: Kategorien der vorhandenen Werte aufklappen
+  React.useEffect(() => {
+    if (initialValues) {
+      expandCategoriesForValues(Object.keys(initialValues))
+    }
+  }, [])
   const valuesByCategory = useMemo(() => getValuesByCategory(gender), [gender])
   const filledCount = Object.values(enteredValues).filter((v) => v.value.trim() !== '').length
 
@@ -227,7 +250,9 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
     return `${range.min}–${range.max}`
   }
 
+
   const handleSave = async () => {
+    if (!uid) { Alert.alert('Fehler', 'Nicht eingeloggt.'); return }
     if (filledCount === 0) {
       Alert.alert('Keine Werte', 'Bitte trage mindestens einen Wert ein.')
       return
@@ -241,16 +266,28 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
           if (!isNaN(parsed)) values[id] = { value: parsed, unit: entry.unit }
         }
       })
-      await addDoc(collection(db, 'users', uid!, 'bloodTests'), {
-        date,
-        note: note.trim(),
-        gender,
-        cyclePhase: profile.cyclePhase,
-        values,
-        scannedByAI: scanResult !== null,
-        createdAt: serverTimestamp(),
-      })
-      Alert.alert('✅ Gespeichert!', `${Object.keys(values).length} Wert(e) gespeichert.`)
+      if (isEditing) {
+        await updateDoc(doc(db, 'users', uid, 'bloodTests', docId), {
+          date,
+          note: note.trim(),
+          gender,
+          cyclePhase: profile.cyclePhase,
+          values,
+          scannedByAI: scanResult !== null,
+        })
+        Alert.alert('✅ Aktualisiert!', `${Object.keys(values).length} Wert(e) aktualisiert.`)
+      } else {
+        await addDoc(collection(db, 'users', uid, 'bloodTests'), {
+          date,
+          note: note.trim(),
+          gender,
+          cyclePhase: profile.cyclePhase,
+          values,
+          scannedByAI: scanResult !== null,
+          createdAt: serverTimestamp(),
+        })
+        Alert.alert('✅ Gespeichert!', `${Object.keys(values).length} Wert(e) gespeichert.`)
+      }
       onClose()
     } catch (e) {
       Alert.alert('Fehler', 'Speichern fehlgeschlagen.')
@@ -272,16 +309,7 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
           scanResult={scanResult}
         />
 
-        <View style={styles.section}>
-          <Text style={styles.label}>📅 Datum der Blutabnahme</Text>
-          <TextInput
-            style={styles.input}
-            value={date}
-            onChangeText={setDate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#9ca3af"
-          />
-        </View>
+        <DatePickerField value={date} onChange={setDate} />
 
         {BLOOD_VALUE_CATEGORIES.map((category) => {
           const values = valuesByCategory[category]
@@ -375,23 +403,14 @@ export default function AddBloodValues({ onClose }: { onClose: () => void }) {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.saveBtn, filledCount === 0 && styles.saveBtnDisabled]}
-          onPress={handleSave}
-          disabled={saving || filledCount === 0}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.saveBtnText}>
-              {filledCount > 0
-                ? `💾 ${filledCount} Wert${filledCount > 1 ? 'e' : ''} speichern`
-                : 'Noch keine Werte eingetragen'}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      <SaveButton
+        onPress={handleSave}
+        label={filledCount > 0
+          ? (isEditing ? '💾 Änderungen speichern' : `💾 ${filledCount} Wert${filledCount > 1 ? 'e' : ''} speichern`)
+          : 'Noch keine Werte eingetragen'}
+        loading={saving}
+        disabled={filledCount === 0}
+      />
 
       <Modal visible={!!unitPickerFor} transparent animationType="slide">
         <TouchableOpacity style={styles.overlay} onPress={() => setUnitPickerFor(null)}>

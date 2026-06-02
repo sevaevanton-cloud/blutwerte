@@ -6,16 +6,19 @@ import { getFirestore } from 'firebase/firestore'
 
 const apiKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY
 if (!apiKey) {
-  throw new Error('EXPO_PUBLIC_FIREBASE_API_KEY ist nicht gesetzt. Bitte .env prüfen.')
+  throw new Error(
+    '[Firebase] EXPO_PUBLIC_FIREBASE_API_KEY ist nicht gesetzt.\n' +
+    'Kopiere .env.example zu .env und trage deinen Firebase API-Key ein.'
+  )
 }
 
 const firebaseConfig = {
   apiKey,
-  authDomain: "blutwerte-app.firebaseapp.com",
-  projectId: "blutwerte-app",
-  storageBucket: "blutwerte-app.firebasestorage.app",
-  messagingSenderId: "449625142980",
-  appId: "1:449625142980:web:55ffe90df20a680677fb91",
+  authDomain: 'blutwerte-app.firebaseapp.com',
+  projectId: 'blutwerte-app',
+  storageBucket: 'blutwerte-app.firebasestorage.app',
+  messagingSenderId: '449625142980',
+  appId: '1:449625142980:web:55ffe90df20a680677fb91',
 }
 
 export const app = initializeApp(firebaseConfig)

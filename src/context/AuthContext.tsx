@@ -10,6 +10,7 @@ import {
   signInAnonymously,
 } from 'firebase/auth'
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { Platform } from 'react-native'
 import { auth } from '../config/firebase'
 
 interface AuthContextType {
@@ -66,9 +67,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(result.user)
   }
 
-  /** Anonymen Account mit Google verknüpfen (Web-Popup) */
+  /** Anonymen Account mit Google verknüpfen
+   *  – Web: linkWithPopup (Popup-Dialog)
+   *  – Native (iOS/Android): wirft einen klaren Fehler mit Hinweis, da
+   *    linkWithPopup dort nicht verfügbar ist. Für eine vollständige
+   *    Native-Implementierung wäre @react-native-google-signin/google-signin nötig.
+   */
   const upgradeWithGoogle = async () => {
     if (!auth.currentUser) throw new Error('Kein Nutzer eingeloggt')
+
+    if (Platform.OS !== 'web') {
+      throw new Error(
+        'Google-Anmeldung ist im Moment nur in der Web-Version verfügbar. ' +
+        'Bitte nutze E-Mail & Passwort oder öffne die App im Browser.'
+      )
+    }
+
     const provider = new GoogleAuthProvider()
     const result = await linkWithPopup(auth.currentUser, provider)
     setUser(result.user)
