@@ -9,6 +9,7 @@ import {
   ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
 import AddBloodValues from '../../components/add/AddBloodValues'
 import ModalHeader, { modalSharedStyles } from '../../components/ui/ModalHeader'
@@ -193,7 +194,7 @@ export default function History() {
   }
 
   return (
-    <>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f7f8fc' }}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>📈 Verlauf</Text>
         <Text style={styles.subtitle}>Deine Blutwerte über Zeit</Text>
@@ -335,7 +336,7 @@ export default function History() {
           )}
         </View>
       </Modal>
-    </>
+    </SafeAreaView>
   )
 }
 
