@@ -1,56 +1,112 @@
-# Welcome to your Expo app 👋
+# Blutwerte-App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Eine mobile Gesundheits-App zur Erfassung und KI-gestützten Analyse von Blutwerten, Ernährung, Supplements und Training. Entwickelt mit React Native (Expo) und Firebase.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Blutwerte erfassen** – manuell oder per KI-gestütztem Foto-Scan (Gemini Vision)
+- **Ernährung tracken** – Mahlzeiten mit Makronährstoffen und Kalorienring
+- **Supplements & Training** – tägliche Einnahme und Trainingseinheiten dokumentieren
+- **KI-Analyse** – Gemini analysiert alle Gesundheitsdaten und gibt personalisierte Empfehlungen
+- **Verlauf & Charts** – Blutwerte im Zeitverlauf mit Referenzbereichen visualisieren
+- **DSGVO-konform** – Einwilligungsscreen, anonymes Login, Datenspeicherung nur in eigenem Firebase-Projekt
 
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-2. Start the app
+| Bereich | Technologie |
+|---|---|
+| Framework | React Native + Expo (SDK 55) |
+| Routing | Expo Router (file-based) |
+| Backend | Firebase (Auth, Firestore) |
+| KI | Google Gemini 2.5 Flash via Firebase Cloud Functions |
+| Sprache | TypeScript |
 
-   ```bash
-   npx expo start
-   ```
+## Voraussetzungen
 
-In the output, you'll find options to open the app in a
+- Node.js 18+
+- Expo CLI (`npm install -g expo`)
+- Firebase-Projekt mit aktivierter Anonymous Authentication und Firestore
+- Google Gemini API Key
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Setup
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### 1. Repository klonen und Dependencies installieren
 
 ```bash
-npm run reset-project
+git clone <repo-url>
+cd blutwerte-main
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Umgebungsvariablen setzen
 
-### Other setup steps
+```bash
+cp .env.example .env
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Dann in `.env` den echten Firebase API Key eintragen:
 
-## Learn more
+```
+EXPO_PUBLIC_FIREBASE_API_KEY=dein-firebase-api-key
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Den Key findest du in der Firebase Console unter **Projekteinstellungen → Allgemein → Web-Apps**.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### 3. Firebase Cloud Functions deployen
 
-## Join the community
+```bash
+cd functions
+npm install
+cd ..
+```
 
-Join our community of developers creating universal apps.
+Gemini API Key als Firebase Secret hinterlegen:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+firebase functions:secrets:set GEMINI_API_KEY
+# Eingabeaufforderung: deinen Gemini API Key eingeben
+```
+
+Functions deployen:
+
+```bash
+firebase deploy --only functions
+```
+
+### 4. App starten
+
+```bash
+npx expo start
+```
+
+Dann im Terminal `w` für Web, `i` für iOS Simulator oder `a` für Android.
+
+## Projektstruktur
+
+```
+src/
+├── app/                  # Screens (Expo Router)
+│   ├── _layout.tsx       # Root-Layout mit Auth/Consent/Profile-Providern
+│   ├── index.tsx         # Routing-Logik (Consent → Onboarding → Home)
+│   ├── consent.tsx       # DSGVO-Einwilligungsscreen
+│   ├── onboarding.tsx    # Ersteinrichtung (Name, Geschlecht, Geburtsjahr)
+│   └── (tabs)/           # Haupt-Navigation
+│       ├── home.tsx      # Dashboard mit Kalorien und heutigen Einträgen
+│       ├── add.tsx       # Einträge hinzufügen
+│       ├── history.tsx   # Verlauf und Charts
+│       ├── analysis.tsx  # KI-Gesundheitsanalyse
+│       └── profile.tsx   # Profil und Account-Verwaltung
+├── components/           # Wiederverwendbare UI-Komponenten
+├── context/              # React Contexts (Auth, Profile, Consent)
+├── services/             # Gemini API-Aufrufe (Scan + Analyse)
+├── constants/            # Blutwerte-Definitionen, Theme, Lebensmitteldatenbank
+└── utils/                # TDEE-Berechnung, Hilfsfunktionen
+functions/
+└── src/index.ts          # Firebase Cloud Functions (scanBloodDocument, analyzeHealthData)
+```
+
+## Hinweise
+
+- **Google-Login** ist nur in der Web-Version verfügbar. Auf iOS/Android steht E-Mail + Passwort zur Verfügung.
+- **Anonymes Login**: Die App erstellt beim ersten Start automatisch einen anonymen Firebase-Account. Daten bleiben erhalten wenn der Account per E-Mail gesichert wird.
+- **Consent**: Ohne Einwilligung kann die App nicht genutzt werden (DSGVO-Anforderung). Der Consent wird lokal in AsyncStorage gespeichert.
