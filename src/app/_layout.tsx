@@ -17,24 +17,24 @@ function AppNavigator() {
   }
 
   return (
-    <Stack>
-      <Stack.Screen name="index"      options={{ headerShown: false }} />
-      <Stack.Screen name="consent"    options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="(tabs)"     options={{ headerShown: false }} />
-    </Stack>
+  <Stack>
+    <Stack.Screen name="index" options={{ headerShown: false }} />
+    <Stack.Screen name="consent" options={{ headerShown: false }} />
+    <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
+    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+  </Stack>
   )
 }
 
 const RootLayout = () => {
   return (
-    <AuthProvider>
-      <ConsentProvider>
+    <ConsentProvider>
+      <AuthProvider>
         <ProfileProvider>
           <AppNavigator />
         </ProfileProvider>
-      </ConsentProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </ConsentProvider>
   )
 }
 
