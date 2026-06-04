@@ -17,9 +17,8 @@ import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../context/ProfileContext'
 import { AnalysisResult, analyzeHealthData } from '../../services/geminiAnalysis'
 
-
 function ScoreRing({ score }: { score: number }) {
-  const color = score >= 70 ? '#34d399' : score >= 40 ? '#fbbf24' : '#f87171'
+  const color = score >= 75 ? '#34d399' : score >= 50 ? '#fbbf24' : '#f87171'
   return (
     <View style={[styles.scoreRing, { borderColor: color }]}>
       <Text style={[styles.scoreNumber, { color }]}>{score}</Text>
@@ -47,7 +46,7 @@ export default function Analysis() {
           setResult(data.result as AnalysisResult)
           setLastAnalyzed(data.analyzedAt ?? null)
         }
-      } catch (e) {
+      } catch {
         // Cache nicht verfügbar – kein Problem
       } finally {
         setCacheLoading(false)
@@ -64,7 +63,6 @@ export default function Analysis() {
       getDocs(query(collection(db, 'users', uid, 'supplements'), orderBy('createdAt', 'desc'), limit(20))),
       getDocs(query(collection(db, 'users', uid, 'training'), orderBy('createdAt', 'desc'), limit(10))),
     ])
-
     return {
       bloodTests: bloodSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
       nutrition: nutritionSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
@@ -77,7 +75,6 @@ export default function Analysis() {
     setLoading(true)
     try {
       const data = await fetchData()
-
       if (data.bloodTests.length === 0) {
         Alert.alert(
           'Keine Blutwerte',
@@ -89,7 +86,7 @@ export default function Analysis() {
       const analysisResult = await analyzeHealthData({
         ...data,
         profile: {
-          name: profile.name,
+          // Kein Name – Pseudonymisierung gemäß DSGVO
           gender: profile.gender,
           birthYear: profile.birthYear,
           cyclePhase: profile.cyclePhase,
@@ -100,7 +97,6 @@ export default function Analysis() {
       setResult(analysisResult)
       setLastAnalyzed(analyzedAt)
 
-      // In Firestore cachen
       if (uid) {
         await setDoc(doc(db, 'users', uid, 'analysisCache', 'latest'), {
           result: analysisResult,
@@ -133,128 +129,162 @@ export default function Analysis() {
     )
   }
 
+  const hasAbnormal = (result?.abnormalValues?.length ?? 0) > 0
+  const hasBorderline = (result?.borderlineValues?.length ?? 0) > 0
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f8fc' }} edges={['top']}>
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>🤖 KI-Analyse</Text>
-      <Text style={styles.subtitle}>
-        Die KI analysiert deine Blutwerte, Ernährung, Supplements und Training.
-      </Text>
-
-      {/* Analyse starten */}
-      <TouchableOpacity
-        style={[styles.analyzeBtn, loading && { opacity: 0.7 }]}
-        onPress={handleAnalyze}
-        disabled={loading}
-      >
-        {loading ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color="#fff" />
-            <Text style={styles.analyzeBtnText}>  Analysiere deine Daten...</Text>
-          </View>
-        ) : (
-          <Text style={styles.analyzeBtnText}>
-            {result ? '🔄 Neue Analyse starten' : '✨ Analyse starten'}
-          </Text>
-        )}
-      </TouchableOpacity>
-
-      {lastAnalyzed && (
-        <Text style={styles.lastAnalyzed}>Zuletzt analysiert: {lastAnalyzed}</Text>
-      )}
-
-      {/* Disclaimer */}
-      <View style={styles.disclaimer}>
-        <Text style={styles.disclaimerText}>
-          ⚕️ Diese Analyse ersetzt keine ärztliche Diagnose. Besprich auffällige Werte immer mit einem Arzt.
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Text style={styles.title}>🤖 KI-Analyse</Text>
+        <Text style={styles.subtitle}>
+          Die KI analysiert deine Blutwerte, Ernährung, Supplements und Training.
         </Text>
-      </View>
 
-      {/* Ergebnisse */}
-      {result && (
-        <View style={styles.results}>
-
-          {/* Score */}
-          <View style={styles.card}>
-            <View style={styles.scoreRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Gesundheitsscore</Text>
-                <Text style={styles.summary}>{result.summary}</Text>
-              </View>
-              <ScoreRing score={result.overallScore} />
+        {/* Analyse starten */}
+        <TouchableOpacity
+          style={[styles.analyzeBtn, loading && { opacity: 0.7 }]}
+          onPress={handleAnalyze}
+          disabled={loading}
+        >
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color="#fff" />
+              <Text style={styles.analyzeBtnText}>  Analysiere deine Daten...</Text>
             </View>
-          </View>
-
-          {/* Auffällige Werte */}
-          {result.abnormalValues && result.abnormalValues.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>⚠️ Auffällige Werte</Text>
-              {result.abnormalValues.map((item, i) => (
-                <View key={i} style={styles.abnormalItem}>
-                  <View style={styles.abnormalHeader}>
-                    <Text style={styles.abnormalName}>{item.name}</Text>
-                    <Text style={styles.abnormalValue}>{item.value}</Text>
-                  </View>
-                  <Text style={styles.abnormalAssessment}>{item.assessment}</Text>
-                </View>
-              ))}
-            </View>
+          ) : (
+            <Text style={styles.analyzeBtnText}>
+              {result ? '🔄 Neue Analyse starten' : '✨ Analyse starten'}
+            </Text>
           )}
+        </TouchableOpacity>
 
-          {/* Ernährung */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🥗 Ernährungsanalyse</Text>
-            <Text style={styles.cardText}>{result.nutritionInsights}</Text>
-          </View>
+        {lastAnalyzed && (
+          <Text style={styles.lastAnalyzed}>Zuletzt analysiert: {lastAnalyzed}</Text>
+        )}
 
-          {/* Supplements */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>💊 Supplement-Empfehlungen</Text>
-            <Text style={styles.cardText}>{result.supplementRecommendations}</Text>
-          </View>
-
-          {/* Training */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🏋️ Training</Text>
-            <Text style={styles.cardText}>{result.trainingInsights}</Text>
-          </View>
-
-          {/* Konkrete Ratschläge */}
-          {result.advice && result.advice.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>💡 Deine nächsten Schritte</Text>
-              {result.advice.map((tip, i) => (
-                <View key={i} style={styles.tipRow}>
-                  <View style={styles.tipNumber}>
-                    <Text style={styles.tipNumberText}>{i + 1}</Text>
-                  </View>
-                  <Text style={styles.tipText}>{tip}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Leerer Zustand */}
-      {!result && !loading && !cacheLoading && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>🔬</Text>
-          <Text style={styles.emptyTitle}>Bereit für deine Analyse</Text>
-          <Text style={styles.emptyText}>
-            Tippe auf „Analyse starten" um eine KI-gestützte Auswertung deiner Gesundheitsdaten zu erhalten.
+        {/* Disclaimer */}
+        <View style={styles.disclaimer}>
+          <Text style={styles.disclaimerText}>
+            ⚕️ Diese Analyse ersetzt keine ärztliche Diagnose. Besprich auffällige Werte immer mit einem Arzt.
           </Text>
         </View>
-      )}
 
-      {/* Cache wird geladen */}
-      {cacheLoading && (
-        <View style={styles.emptyState}>
-          <ActivityIndicator color={BRAND} size="large" />
-          <Text style={[styles.emptyText, { marginTop: 12 }]}>Letzte Analyse wird geladen...</Text>
-        </View>
-      )}
-    </ScrollView>
+        {/* Ergebnisse */}
+        {result && (
+          <View style={styles.results}>
+
+            {/* Score + Zusammenfassung */}
+            <View style={styles.card}>
+              <View style={styles.scoreRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Gesundheitsscore</Text>
+                  <Text style={styles.summary}>{result.summary}</Text>
+                </View>
+                <ScoreRing score={result.overallScore} />
+              </View>
+            </View>
+
+            {/* Auffällige Werte (außerhalb Normbereich) */}
+            {hasAbnormal && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>🚨 Außerhalb des Normbereichs</Text>
+                {result.abnormalValues.map((item, i) => (
+                  <View key={i} style={styles.abnormalItem}>
+                    <View style={styles.itemHeader}>
+                      <Text style={styles.itemName}>{item.name}</Text>
+                      <Text style={styles.abnormalValue}>{item.value}</Text>
+                    </View>
+                    <Text style={styles.itemAssessment}>{item.assessment}</Text>
+                    {item.recommendation ? (
+                      <View style={styles.recommendationRow}>
+                        <Text style={styles.recommendationIcon}>💡</Text>
+                        <Text style={styles.recommendationText}>{item.recommendation}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Grenzwertige Werte (im Normbereich, aber am Rand) */}
+            {hasBorderline && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>⚠️ Im Normbereich, aber am Rand</Text>
+                <Text style={styles.borderlineSubtitle}>
+                  Diese Werte sind noch normal – aber präventiv im Blick behalten.
+                </Text>
+                {result.borderlineValues.map((item, i) => (
+                  <View key={i} style={styles.borderlineItem}>
+                    <View style={styles.itemHeader}>
+                      <Text style={styles.itemName}>{item.name}</Text>
+                      <Text style={styles.borderlineValue}>{item.value}</Text>
+                    </View>
+                    <Text style={styles.itemAssessment}>{item.assessment}</Text>
+                    {item.recommendation ? (
+                      <View style={styles.recommendationRow}>
+                        <Text style={styles.recommendationIcon}>💡</Text>
+                        <Text style={styles.recommendationText}>{item.recommendation}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Ernährung */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>🥗 Ernährungsanalyse</Text>
+              <Text style={styles.cardText}>{result.nutritionInsights}</Text>
+            </View>
+
+            {/* Supplements */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>💊 Supplement-Empfehlungen</Text>
+              <Text style={styles.cardText}>{result.supplementRecommendations}</Text>
+            </View>
+
+            {/* Training */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>🏋️ Training</Text>
+              <Text style={styles.cardText}>{result.trainingInsights}</Text>
+            </View>
+
+            {/* Konkrete nächste Schritte */}
+            {result.advice && result.advice.length > 0 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>🎯 Deine nächsten Schritte</Text>
+                {result.advice.map((tip, i) => (
+                  <View key={i} style={styles.tipRow}>
+                    <View style={styles.tipNumber}>
+                      <Text style={styles.tipNumberText}>{i + 1}</Text>
+                    </View>
+                    <Text style={styles.tipText}>{tip}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Leerer Zustand */}
+        {!result && !loading && !cacheLoading && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🔬</Text>
+            <Text style={styles.emptyTitle}>Bereit für deine Analyse</Text>
+            <Text style={styles.emptyText}>
+              Tippe auf „Analyse starten" um eine KI-gestützte Auswertung deiner Gesundheitsdaten zu erhalten.
+            </Text>
+          </View>
+        )}
+
+        {/* Cache wird geladen */}
+        {cacheLoading && (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={BRAND} size="large" />
+            <Text style={[styles.emptyText, { marginTop: 12 }]}>Letzte Analyse wird geladen...</Text>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   )
 }
@@ -296,9 +326,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 18,
-    shadowColor: BRAND,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 3,
   },
@@ -318,6 +348,7 @@ const styles = StyleSheet.create({
   scoreLabel: { fontSize: 11, color: '#9ca3af' },
   summary: { fontSize: 14, color: '#4b5563', lineHeight: 22 },
 
+  // Auffällig (außerhalb Normbereich) – rotes Styling
   abnormalItem: {
     backgroundColor: '#fff5f5',
     borderRadius: 10,
@@ -326,10 +357,36 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#f87171',
   },
-  abnormalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  abnormalName: { fontSize: 14, fontWeight: '700', color: '#1a1a2e' },
-  abnormalValue: { fontSize: 14, fontWeight: '700', color: '#f87171' },
-  abnormalAssessment: { fontSize: 13, color: '#6b7280', lineHeight: 20 },
+  abnormalValue: { fontSize: 13, fontWeight: '700', color: '#ef4444' },
+
+  // Grenzwertig (im Normbereich, aber Rand) – gelbes Styling
+  borderlineSubtitle: { fontSize: 12, color: '#9ca3af', marginBottom: 10, marginTop: -4 },
+  borderlineItem: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#fbbf24',
+  },
+  borderlineValue: { fontSize: 13, fontWeight: '700', color: '#d97706' },
+
+  // Gemeinsame Stile für beide Typen
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  itemName: { fontSize: 14, fontWeight: '700', color: '#1a1a2e', flex: 1, marginRight: 8 },
+  itemAssessment: { fontSize: 13, color: '#6b7280', lineHeight: 19 },
+
+  recommendationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 6,
+    backgroundColor: 'rgba(99,102,241,0.06)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  recommendationIcon: { fontSize: 13 },
+  recommendationText: { fontSize: 13, color: '#4338ca', lineHeight: 19, flex: 1, fontWeight: '500' },
 
   tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   tipNumber: {
@@ -340,6 +397,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
+    flexShrink: 0,
   },
   tipNumberText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   tipText: { flex: 1, fontSize: 14, color: '#4b5563', lineHeight: 22 },
