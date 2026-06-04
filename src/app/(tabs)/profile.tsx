@@ -1,14 +1,14 @@
 // src/app/(tabs)/profile.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 import { collection, deleteDoc, getDocs } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
-  Alert, ScrollView, StyleSheet, Text,
+  Alert, Platform, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import AccountUpgrade from '../../components/profile/AccountUpgrade'
 import { db } from '../../config/firebase'
 import { BRAND, BRAND_LIGHT } from '../../constants/theme'
 import { useAuth } from '../../context/AuthContext'
@@ -33,7 +33,7 @@ async function deleteSubcollection(uid: string, subcollection: string) {
 
 export default function Profile() {
   const { profile, updateProfile, calorieGoal } = useProfile()
-  const { isAnonymous, uid, signOut } = useAuth()
+  const { user, uid, signOut } = useAuth()
   const { revokeConsent } = useConsent()
   const [deletingData, setDeletingData] = useState(false)
 
@@ -44,7 +44,9 @@ export default function Profile() {
       [
         { text: 'Abbrechen', style: 'cancel' },
         { text: 'Abmelden', style: 'destructive', onPress: async () => {
-          await revokeConsent()  // Consent zurücksetzen, damit neuer Nutzer Einwilligung sieht
+          // Lokalen Cache ZUERST löschen, bevor signOut() den uid-Listener auslöst
+          await AsyncStorage.clear()
+          await revokeConsent()
           await signOut()
           router.replace('/consent')
         }},
@@ -73,8 +75,12 @@ export default function Profile() {
             if (!uid) return
             setDeletingData(true)
             try {
-              // Alle Subcollections löschen (Profil liegt in users/{uid}/profile/data)
-              await Promise.all([
+              // 1. Lokalen Cache sofort löschen (verhindert Re-Load nach Navigation)
+              await AsyncStorage.clear()
+              await revokeConsent()
+
+              // 2. Firestore-Löschung mit allSettled: ein Fehler blockiert nicht den Rest
+              await Promise.allSettled([
                 deleteSubcollection(uid, 'bloodTests'),
                 deleteSubcollection(uid, 'nutrition'),
                 deleteSubcollection(uid, 'supplements'),
@@ -82,16 +88,15 @@ export default function Profile() {
                 deleteSubcollection(uid, 'analysisCache'),
                 deleteSubcollection(uid, 'profile'),
               ])
-              // Lokalen Profil-Cache aus AsyncStorage löschen
-              await AsyncStorage.removeItem('userProfile')
-              // Einwilligung widerrufen
-              await revokeConsent()
-              Alert.alert('✅ Daten gelöscht', 'Alle deine Daten wurden erfolgreich gelöscht.')
+
+              // 3. Direkt navigieren – kein Alert davor (Alert + router.replace = Race Condition)
+              await signOut()
               router.replace('/consent')
             } catch (e: any) {
               Alert.alert('Fehler', `Löschen fehlgeschlagen: ${e.message}`)
             } finally {
               setDeletingData(false)
+
             }
           },
         },
@@ -123,7 +128,12 @@ export default function Profile() {
 
   const [name, setName]               = useState(profile.name)
   const [gender, setGender]           = useState(profile.gender)
-  const [birthYear, setBirthYear]     = useState(profile.birthYear?.toString() ?? '')
+  const [birthDate, setBirthDate]     = useState<Date>(
+    profile.birthYear
+      ? new Date(profile.birthYear, 0, 1)
+      : new Date(1990, 0, 1)
+  )
+  const [showBirthPicker, setShowBirthPicker] = useState(false)
   const [cyclePhase, setCyclePhase]   = useState(profile.cyclePhase)
   const [cycleDay, setCycleDay]       = useState(profile.cycleDay?.toString() ?? '')
   const [height, setHeight]           = useState(profile.height?.toString() ?? '')
@@ -134,7 +144,7 @@ export default function Profile() {
   // Live-Vorschau TDEE
   const previewTDEE = calculateTDEE({
     gender,
-    birthYear: birthYear ? parseInt(birthYear) : null,
+    birthYear: birthDate.getFullYear(),
     height: height ? parseFloat(height) : null,
     weight: weight ? parseFloat(weight) : null,
     activityLevel,
@@ -146,7 +156,7 @@ export default function Profile() {
     updateProfile({
       name: name.trim(),
       gender,
-      birthYear: birthYear ? parseInt(birthYear) : null,
+      birthYear: birthDate.getFullYear(),
       cyclePhase: gender === 'female' ? cyclePhase : 'unknown',
       cycleDay: gender === 'female' && cycleDay ? parseInt(cycleDay) : null,
       height: height ? parseFloat(height) : null,
@@ -201,10 +211,45 @@ export default function Profile() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Geburtsjahr</Text>
-        <TextInput style={styles.input} value={birthYear} onChangeText={setBirthYear}
-          placeholder="z.B. 1990" placeholderTextColor="#9ca3af"
-          keyboardType="number-pad" maxLength={4} />
+        <Text style={styles.label}>Geburtsjahr · {birthDate.getFullYear()}</Text>
+        <TouchableOpacity
+          style={styles.input}
+          onPress={() => setShowBirthPicker(v => !v)}
+          activeOpacity={0.75}
+        >
+          <Text style={{ fontSize: 16, color: '#1a1a2e', fontWeight: '600' }}>
+            {birthDate.getFullYear()}
+          </Text>
+          <Text style={{ color: BRAND, fontWeight: '700' }}>
+            {showBirthPicker ? '▴' : '▾'}
+          </Text>
+        </TouchableOpacity>
+        {showBirthPicker && (
+          <View style={styles.pickerWrapper}>
+            <DateTimePicker
+              value={birthDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_, selectedDate) => {
+                if (Platform.OS === 'android') setShowBirthPicker(false)
+                if (selectedDate) setBirthDate(selectedDate)
+              }}
+              minimumDate={new Date(new Date().getFullYear() - 100, 0, 1)}
+              maximumDate={new Date(new Date().getFullYear() - 14, 11, 31)}
+              locale="de-DE"
+              style={{ height: 150 }}
+              textColor="#1a1a2e"
+            />
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={styles.pickerDoneBtn}
+                onPress={() => setShowBirthPicker(false)}
+              >
+                <Text style={{ color: BRAND, fontWeight: '700', fontSize: 15 }}>Fertig</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -299,13 +344,15 @@ export default function Profile() {
 
       {/* ── Account ── */}
       <Text style={styles.sectionTitle}>Account</Text>
-      {isAnonymous && <AccountUpgrade />}
-      {!isAnonymous && (
-        <View style={styles.accountBadge}>
-          <Text style={styles.accountBadgeIcon}>✅</Text>
-          <Text style={styles.accountBadgeText}>Account gesichert – deine Daten sind sicher</Text>
+      <View style={styles.accountBadge}>
+        <Text style={styles.accountBadgeIcon}>✅</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.accountBadgeText}>Account gesichert</Text>
+          {user?.email ? (
+            <Text style={styles.accountBadgeEmail}>{user.email}</Text>
+          ) : null}
         </View>
-      )}
+      </View>
 
       <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
         <Text style={styles.saveButtonText}>Profil speichern</Text>
@@ -363,7 +410,9 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 12, shadowColor: BRAND, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
   label: { fontSize: 12, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
   hint: { fontSize: 12, color: '#9ca3af', marginBottom: 12, lineHeight: 17 },
-  input: { backgroundColor: '#f7f8fc', color: '#1a1a2e', borderRadius: 10, padding: 14, fontSize: 16, borderWidth: 1.5, borderColor: '#e5e7eb' },
+  input: { backgroundColor: '#f7f8fc', color: '#1a1a2e', borderRadius: 10, padding: 14, fontSize: 16, borderWidth: 1.5, borderColor: '#e5e7eb', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pickerWrapper: { backgroundColor: '#fff', borderRadius: 12, marginTop: 8, borderWidth: 1, borderColor: '#e5e7eb', overflow: 'hidden' },
+  pickerDoneBtn: { alignItems: 'flex-end', padding: 12, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
 
   row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#f7f8fc', borderWidth: 1.5, borderColor: '#e5e7eb' },
@@ -384,7 +433,8 @@ const styles = StyleSheet.create({
 
   accountBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f0fdf4', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#bbf7d0', marginBottom: 12 },
   accountBadgeIcon: { fontSize: 18 },
-  accountBadgeText: { fontSize: 13, color: '#16a34a', fontWeight: '600', flex: 1 },
+  accountBadgeText: { fontSize: 13, color: '#16a34a', fontWeight: '600' },
+  accountBadgeEmail: { fontSize: 12, color: '#6b7280', marginTop: 2 },
 
   saveButton: { backgroundColor: BRAND, padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 8, shadowColor: BRAND, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 6 },
   saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },

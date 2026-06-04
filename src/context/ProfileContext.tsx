@@ -20,6 +20,8 @@ export interface UserProfile {
   activityLevel: ActivityLevel | null
   calorieGoalOverride: number | null
   isProfileComplete: boolean
+  bodyStatus: number | null   // 1–5: Sehr dünn → Stark übergewichtig
+  bodyGoal: number | null     // 1–5: gewünschter Körperstatus
 }
 
 interface ProfileContextType {
@@ -40,6 +42,8 @@ const DEFAULT_PROFILE: UserProfile = {
   activityLevel: null,
   calorieGoalOverride: null,
   isProfileComplete: false,
+  bodyStatus: null,
+  bodyGoal: null,
 }
 
 const STORAGE_KEY = 'userProfile'
@@ -59,6 +63,13 @@ export const ProfileProvider = ({ children }: { children: React.ReactNode }) => 
 
   useEffect(() => {
     if (!isAuthReady) return
+
+    // Kein User → Profil sofort zurücksetzen (verhindert stale State nach Logout)
+    if (!uid) {
+      setProfile(DEFAULT_PROFILE)
+      setIsLoading(false)
+      return
+    }
 
     const loadProfile = async () => {
       try {

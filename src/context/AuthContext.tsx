@@ -1,25 +1,20 @@
 // src/context/AuthContext.tsx
 import {
-  EmailAuthProvider,
-  GoogleAuthProvider,
   User,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
-  linkWithCredential,
-  linkWithPopup,
   onAuthStateChanged,
-  signInAnonymously,
+  signInWithEmailAndPassword,
 } from 'firebase/auth'
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { Platform } from 'react-native'
 import { auth } from '../config/firebase'
 
 interface AuthContextType {
   user: User | null
   uid: string | null
   isAuthReady: boolean
-  isAnonymous: boolean
-  upgradeWithEmail: (email: string, password: string) => Promise<void>
-  upgradeWithGoogle: () => Promise<void>
+  signIn: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -27,9 +22,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   uid: null,
   isAuthReady: false,
-  isAnonymous: true,
-  upgradeWithEmail: async () => {},
-  upgradeWithGoogle: async () => {},
+  signIn: async () => {},
+  register: async () => {},
   signOut: async () => {},
 })
 
@@ -43,53 +37,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsAuthReady(true)
       return
     }
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser)
-      } else {
-        try {
-          const result = await signInAnonymously(auth)
-          setUser(result.user)
-        } catch (e) {
-          console.error('Anonymes Login fehlgeschlagen', e)
-        }
-      }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      // Kein anonymes Auto-Login mehr – nur echte User
+      setUser(currentUser)
       setIsAuthReady(true)
     })
     return unsubscribe
   }, [])
 
-  /** Anonymen Account mit E-Mail + Passwort verknüpfen */
-  const upgradeWithEmail = async (email: string, password: string) => {
-    if (!auth.currentUser) throw new Error('Kein Nutzer eingeloggt')
-    const credential = EmailAuthProvider.credential(email, password)
-    const result = await linkWithCredential(auth.currentUser, credential)
+  const signIn = async (email: string, password: string) => {
+    const result = await signInWithEmailAndPassword(auth, email, password)
     setUser(result.user)
   }
 
-  /** Anonymen Account mit Google verknüpfen
-   *  – Web: linkWithPopup (Popup-Dialog)
-   *  – Native (iOS/Android): wirft einen klaren Fehler mit Hinweis, da
-   *    linkWithPopup dort nicht verfügbar ist. Für eine vollständige
-   *    Native-Implementierung wäre @react-native-google-signin/google-signin nötig.
-   */
-  const upgradeWithGoogle = async () => {
-    if (!auth.currentUser) throw new Error('Kein Nutzer eingeloggt')
-
-    if (Platform.OS !== 'web') {
-      throw new Error(
-        'Google-Anmeldung ist im Moment nur in der Web-Version verfügbar. ' +
-        'Bitte nutze E-Mail & Passwort oder öffne die App im Browser.'
-      )
-    }
-
-    const provider = new GoogleAuthProvider()
-    const result = await linkWithPopup(auth.currentUser, provider)
+  const register = async (email: string, password: string) => {
+    const result = await createUserWithEmailAndPassword(auth, email, password)
     setUser(result.user)
   }
 
   const signOut = async () => {
     await firebaseSignOut(auth)
+    setUser(null)
   }
 
   return (
@@ -97,9 +65,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       uid: user?.uid ?? null,
       isAuthReady,
-      isAnonymous: user?.isAnonymous ?? true,
-      upgradeWithEmail,
-      upgradeWithGoogle,
+      signIn,
+      register,
       signOut,
     }}>
       {children}

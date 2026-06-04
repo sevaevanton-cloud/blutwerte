@@ -1,3 +1,4 @@
+// src/app/_layout.tsx
 import { Stack } from 'expo-router'
 import React from 'react'
 import { ActivityIndicator, View } from 'react-native'
@@ -17,16 +18,17 @@ function AppNavigator() {
   }
 
   return (
-  <Stack>
-    <Stack.Screen name="index" options={{ headerShown: false }} />
-    <Stack.Screen name="consent" options={{ headerShown: false }} />
-    <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
-    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-  </Stack>
+    <Stack>
+      <Stack.Screen name="index"      options={{ headerShown: false }} />
+      <Stack.Screen name="consent"    options={{ headerShown: false }} />
+      <Stack.Screen name="auth"       options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="(tabs)"     options={{ headerShown: false }} />
+    </Stack>
   )
 }
 
-const RootLayout = () => {
+export default function RootLayout() {
   return (
     <ConsentProvider>
       <AuthProvider>
@@ -37,5 +39,3 @@ const RootLayout = () => {
     </ConsentProvider>
   )
 }
-
-export default RootLayout
