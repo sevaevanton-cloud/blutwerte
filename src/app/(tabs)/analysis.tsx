@@ -1,6 +1,7 @@
 // src/app/(tabs)/analysis.tsx
+import { useLocalSearchParams } from 'expo-router'
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -19,22 +20,42 @@ import { AnalysisResult, analyzeHealthData } from '../../services/geminiAnalysis
 
 
 function ScoreRing({ score }: { score: number }) {
-  const color = score >= 70 ? '#34d399' : score >= 40 ? '#fbbf24' : '#f87171'
+  const color =
+    score >= 95 ? '#34d399' :   // Optimal
+    score >= 90 ? '#4ade80' :   // Gut
+    score >= 80 ? '#a3e635' :   // OK
+    score >= 70 ? '#fbbf24' :   // Grenzwertig
+    score >= 60 ? '#f97316' :   // Bedenklich
+    '#f87171'                   // Kritisch
+
+  const label =
+    score >= 95 ? 'Optimal' :
+    score >= 90 ? 'Gut' :
+    score >= 80 ? 'OK' :
+    score >= 70 ? 'Grenzwertig' :
+    score >= 60 ? 'Bedenklich' : 'Kritisch'
+
   return (
     <View style={[styles.scoreRing, { borderColor: color }]}>
       <Text style={[styles.scoreNumber, { color }]}>{score}</Text>
-      <Text style={styles.scoreLabel}>/ 100</Text>
+      <Text style={[styles.scoreLabel, { color: color + 'cc' }]}>{label}</Text>
     </View>
   )
 }
 
 export default function Analysis() {
-  const { profile } = useProfile()
-  const { uid } = useAuth()
-  const [loading, setLoading] = useState(false)
+  const { profile }   = useProfile()
+  const { uid }       = useAuth()
+  // autoStart-Parameter aus der Navigation (gesetzt von home.tsx Banner)
+  const { autoStart } = useLocalSearchParams<{ autoStart?: string }>()
+
+  const [loading, setLoading]           = useState(false)
   const [cacheLoading, setCacheLoading] = useState(true)
-  const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [result, setResult]             = useState<AnalysisResult | null>(null)
   const [lastAnalyzed, setLastAnalyzed] = useState<string | null>(null)
+
+  // Verhindert doppelten Auto-Start bei Re-Renders
+  const hasAutoStarted = useRef(false)
 
   // Cache beim Öffnen laden
   useEffect(() => {
@@ -47,7 +68,7 @@ export default function Analysis() {
           setResult(data.result as AnalysisResult)
           setLastAnalyzed(data.analyzedAt ?? null)
         }
-      } catch (e) {
+      } catch {
         // Cache nicht verfügbar – kein Problem
       } finally {
         setCacheLoading(false)
@@ -59,17 +80,17 @@ export default function Analysis() {
   const fetchData = async () => {
     if (!uid) throw new Error('Nicht eingeloggt.')
     const [bloodSnap, nutritionSnap, supplementSnap, trainingSnap] = await Promise.all([
-      getDocs(query(collection(db, 'users', uid, 'bloodTests'), orderBy('createdAt', 'desc'), limit(3))),
-      getDocs(query(collection(db, 'users', uid, 'nutrition'), orderBy('createdAt', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'users', uid, 'bloodTests'),  orderBy('createdAt', 'desc'), limit(3))),
+      getDocs(query(collection(db, 'users', uid, 'nutrition'),   orderBy('createdAt', 'desc'), limit(20))),
       getDocs(query(collection(db, 'users', uid, 'supplements'), orderBy('createdAt', 'desc'), limit(20))),
-      getDocs(query(collection(db, 'users', uid, 'training'), orderBy('createdAt', 'desc'), limit(10))),
+      getDocs(query(collection(db, 'users', uid, 'training'),    orderBy('createdAt', 'desc'), limit(10))),
     ])
 
     return {
-      bloodTests: bloodSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-      nutrition: nutritionSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-      supplements: supplementSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-      training: trainingSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      bloodTests:  bloodSnap.docs.map(d   => ({ id: d.id, ...d.data() })),
+      nutrition:   nutritionSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      supplements: supplementSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      training:    trainingSnap.docs.map(d  => ({ id: d.id, ...d.data() })),
     }
   }
 
@@ -81,7 +102,7 @@ export default function Analysis() {
       if (data.bloodTests.length === 0) {
         Alert.alert(
           'Keine Blutwerte',
-          'Bitte trage zuerst deine Blutwerte ein damit die KI sie analysieren kann.'
+          'Bitte trage zuerst deine Blutwerte ein, damit die KI sie analysieren kann.'
         )
         return
       }
@@ -89,8 +110,8 @@ export default function Analysis() {
       const analysisResult = await analyzeHealthData({
         ...data,
         profile: {
-          gender: profile.gender,
-          birthYear: profile.birthYear,
+          gender:     profile.gender,
+          birthYear:  profile.birthYear,
           cyclePhase: profile.cyclePhase,
         },
       })
@@ -99,7 +120,6 @@ export default function Analysis() {
       setResult(analysisResult)
       setLastAnalyzed(analyzedAt)
 
-      // In Firestore cachen
       if (uid) {
         await setDoc(doc(db, 'users', uid, 'analysisCache', 'latest'), {
           result: analysisResult,
@@ -113,7 +133,7 @@ export default function Analysis() {
     }
   }
 
-  // DSGVO-Pflicht: Bestätigungs-Dialog vor jeder KI-Analyse (Art. 13 DSGVO)
+  // DSGVO-Bestätigungs-Dialog (für manuelle Starts über Button)
   const handleAnalyze = () => {
     Alert.alert(
       '🤖 Daten an Google Gemini senden?',
@@ -131,6 +151,16 @@ export default function Analysis() {
       ]
     )
   }
+
+  // ── Auto-Start: wenn aus Home-Banner mit bestätigtem Dialog navigiert ──
+  // Der DSGVO-Dialog wurde bereits in home.tsx gezeigt → direkt starten
+  useEffect(() => {
+    if (autoStart === '1' && !hasAutoStarted.current && uid) {
+      hasAutoStarted.current = true
+      runAnalysis()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, uid])
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f8fc' }} edges={['top']}>
@@ -181,6 +211,23 @@ export default function Analysis() {
                 <Text style={styles.summary}>{result.summary}</Text>
               </View>
               <ScoreRing score={result.overallScore} />
+            </View>
+            {/* Score-Legende */}
+            <View style={styles.scoreLegend}>
+              {[
+                { range: '95–100', label: 'Optimal',     color: '#34d399' },
+                { range: '90–94',  label: 'Gut',         color: '#4ade80' },
+                { range: '80–89',  label: 'OK',          color: '#a3e635' },
+                { range: '70–79',  label: 'Grenzwertig', color: '#fbbf24' },
+                { range: '60–69',  label: 'Bedenklich',  color: '#f97316' },
+                { range: '< 60',   label: 'Kritisch',    color: '#f87171' },
+              ].map(l => (
+                <View key={l.range} style={styles.legendRow}>
+                  <View style={[styles.legendDot, { backgroundColor: l.color }]} />
+                  <Text style={styles.legendRange}>{l.range}</Text>
+                  <Text style={styles.legendLabel}>{l.label}</Text>
+                </View>
+              ))}
             </View>
           </View>
 
@@ -265,65 +312,47 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: '#9ca3af', fontWeight: '500', marginBottom: 20 },
 
   analyzeBtn: {
-    backgroundColor: BRAND,
-    padding: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    shadowColor: BRAND,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
+    backgroundColor: BRAND, padding: 18, borderRadius: 16, alignItems: 'center',
+    shadowColor: BRAND, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 14, elevation: 8,
   },
   loadingRow: { flexDirection: 'row', alignItems: 'center' },
   analyzeBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
   lastAnalyzed: { fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 8 },
 
   disclaimer: {
-    backgroundColor: '#fff7e7',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: '#fbbf24',
+    backgroundColor: '#fff7e7', borderRadius: 12, padding: 12, marginTop: 16,
+    borderLeftWidth: 3, borderLeftColor: '#fbbf24',
   },
   disclaimerText: { fontSize: 12, color: '#92400e', lineHeight: 18 },
 
   results: { marginTop: 20, gap: 14 },
 
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 18,
-    shadowColor: BRAND,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    backgroundColor: '#fff', borderRadius: 16, padding: 18,
+    shadowColor: BRAND, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
   },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e', marginBottom: 10 },
   cardText: { fontSize: 14, color: '#4b5563', lineHeight: 22 },
 
-  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 16 },
   scoreRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 84, height: 84, borderRadius: 42, borderWidth: 6,
+    alignItems: 'center', justifyContent: 'center',
   },
-  scoreNumber: { fontSize: 24, fontWeight: '800' },
-  scoreLabel: { fontSize: 11, color: '#9ca3af' },
+  scoreNumber: { fontSize: 26, fontWeight: '800' },
+  scoreLabel: { fontSize: 10, fontWeight: '700', marginTop: -2 },
   summary: { fontSize: 14, color: '#4b5563', lineHeight: 22 },
 
+  // Score-Legende
+  scoreLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 8 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendRange: { fontSize: 10, color: '#6b7280', fontWeight: '700' },
+  legendLabel: { fontSize: 10, color: '#9ca3af' },
+
   abnormalItem: {
-    backgroundColor: '#fff5f5',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#f87171',
+    backgroundColor: '#fff5f5', borderRadius: 10, padding: 12, marginBottom: 8,
+    borderLeftWidth: 3, borderLeftColor: '#f87171',
   },
   abnormalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   abnormalName: { fontSize: 14, fontWeight: '700', color: '#1a1a2e' },
@@ -332,13 +361,8 @@ const styles = StyleSheet.create({
 
   tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   tipNumber: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: BRAND,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
+    width: 26, height: 26, borderRadius: 13, backgroundColor: BRAND,
+    alignItems: 'center', justifyContent: 'center', marginTop: 1,
   },
   tipNumberText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   tipText: { flex: 1, fontSize: 14, color: '#4b5563', lineHeight: 22 },
