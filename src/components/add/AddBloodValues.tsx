@@ -1,6 +1,7 @@
 // src/components/add/AddBloodValues.tsx
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
@@ -275,7 +276,14 @@ export default function AddBloodValues({ onClose, docId, initialValues, initialD
           values,
           scannedByAI: scanResult !== null,
         })
-        Alert.alert('✅ Aktualisiert!', `${Object.keys(values).length} Wert(e) aktualisiert.`)
+        Alert.alert(
+          '✅ Aktualisiert!',
+          `${Object.keys(values).length} Wert(e) aktualisiert.\nMöchtest du jetzt eine KI-Analyse starten?`,
+          [
+            { text: 'Später', style: 'cancel', onPress: () => onClose() },
+            { text: '🧬 Analyse starten', onPress: () => { onClose(); router.push('/(tabs)/analysis') } },
+          ]
+        )
       } else {
         await addDoc(collection(db, 'users', uid, 'bloodTests'), {
           date,
@@ -286,9 +294,15 @@ export default function AddBloodValues({ onClose, docId, initialValues, initialD
           scannedByAI: scanResult !== null,
           createdAt: serverTimestamp(),
         })
-        Alert.alert('✅ Gespeichert!', `${Object.keys(values).length} Wert(e) gespeichert.`)
+        Alert.alert(
+          '✅ Gespeichert!',
+          `${Object.keys(values).length} Wert(e) gespeichert.\nMöchtest du jetzt eine KI-Analyse starten?`,
+          [
+            { text: 'Später', style: 'cancel', onPress: () => onClose() },
+            { text: '🧬 Analyse starten', onPress: () => { onClose(); router.push('/(tabs)/analysis') } },
+          ]
+        )
       }
-      onClose()
     } catch (e) {
       Alert.alert('Fehler', 'Speichern fehlgeschlagen.')
     } finally {

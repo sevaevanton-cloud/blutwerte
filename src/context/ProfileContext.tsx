@@ -8,6 +8,7 @@ import { useAuth } from './AuthContext'
 export type Gender = 'male' | 'female' | 'diverse'
 export type CyclePhase = 'menstruation' | 'follicular' | 'ovulation' | 'luteal' | 'unknown'
 export type ActivityLevel = 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extra_active'
+export type FitnessGoal = 'lose_fat' | 'build_muscle' | 'improve_health' | 'boost_performance' | 'maintain'
 
 export interface UserProfile {
   name: string
@@ -20,8 +21,9 @@ export interface UserProfile {
   activityLevel: ActivityLevel | null
   calorieGoalOverride: number | null
   isProfileComplete: boolean
-  bodyStatus: number | null   // 1–5: Sehr dünn → Stark übergewichtig
-  bodyGoal: number | null     // 1–5: gewünschter Körperstatus
+  bodyStatus: number | null   // KFA-Prozent (z.B. 15 für 15%)
+  bodyGoal: number | null     // Legacy – nicht mehr verwendet
+  fitnessGoal: FitnessGoal | null  // Primärziel des Nutzers
 }
 
 interface ProfileContextType {
@@ -44,6 +46,7 @@ const DEFAULT_PROFILE: UserProfile = {
   isProfileComplete: false,
   bodyStatus: null,
   bodyGoal: null,
+  fitnessGoal: null,
 }
 
 const STORAGE_KEY = 'userProfile'
@@ -64,7 +67,6 @@ export const ProfileProvider = ({ children }: { children: React.ReactNode }) => 
   useEffect(() => {
     if (!isAuthReady) return
 
-    // Kein User → Profil sofort zurücksetzen (verhindert stale State nach Logout)
     if (!uid) {
       setProfile(DEFAULT_PROFILE)
       setIsLoading(false)
