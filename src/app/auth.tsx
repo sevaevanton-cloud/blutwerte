@@ -2,9 +2,9 @@
 import { router } from 'expo-router'
 import React, { useState } from 'react'
 import {
-    ActivityIndicator, KeyboardAvoidingView, Platform,
-    ScrollView, StyleSheet, Text, TextInput,
-    TouchableOpacity, View,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
 } from 'react-native'
 import { BRAND } from '../constants/theme'
 import { useAuth } from '../context/AuthContext'
@@ -62,7 +62,6 @@ export default function AuthScreen() {
       } else {
         await register(email.trim(), password)
       }
-      // index.tsx übernimmt das Routing (Onboarding oder Home)
       router.replace('/')
     } catch (e: any) {
       setError(ERROR_MAP[e?.code] ?? `Fehler: ${e.message}`)
@@ -114,8 +113,10 @@ export default function AuthScreen() {
             placeholder="deine@email.de"
             placeholderTextColor="#9ca3af"
             keyboardType="email-address"
+            textContentType="emailAddress"
             autoCapitalize="none"
             autoCorrect={false}
+            spellCheck={false}
             returnKeyType="next"
           />
 
@@ -127,6 +128,7 @@ export default function AuthScreen() {
             placeholder="Mindestens 6 Zeichen"
             placeholderTextColor="#9ca3af"
             secureTextEntry
+            textContentType={mode === 'register' ? 'newPassword' : 'password'}
             returnKeyType={mode === 'register' ? 'next' : 'done'}
             onSubmitEditing={() => mode === 'login' && handleSubmit()}
           />
@@ -141,6 +143,7 @@ export default function AuthScreen() {
                 placeholder="Passwort wiederholen"
                 placeholderTextColor="#9ca3af"
                 secureTextEntry
+                textContentType="newPassword"
                 returnKeyType="done"
                 onSubmitEditing={handleSubmit}
               />

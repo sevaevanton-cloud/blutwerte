@@ -1,4 +1,5 @@
 // src/app/(tabs)/home.tsx
+import { router } from 'expo-router'
 import {
   collection,
   getDocs,
@@ -42,6 +43,110 @@ interface SupplementEntry {
   unit: string
   time: string
 }
+
+// ── AI Analysis Banner ─────────────────────────────────────────────
+function AIAnalysisBanner() {
+  return (
+    <TouchableOpacity
+      style={bannerStyles.container}
+      onPress={() => router.push('/(tabs)/analysis')}
+      activeOpacity={0.88}
+    >
+      {/* Decorative circles */}
+      <View style={bannerStyles.circle1} />
+      <View style={bannerStyles.circle2} />
+
+      <View style={bannerStyles.inner}>
+        <View style={bannerStyles.iconWrap}>
+          <Text style={bannerStyles.icon}>🧬</Text>
+        </View>
+        <View style={bannerStyles.textBlock}>
+          <Text style={bannerStyles.title}>KI-Analyse starten</Text>
+          <Text style={bannerStyles.subtitle}>
+            Blutwerte verstehen, Ursachen erkennen,{'\n'}personalisierte Empfehlungen erhalten.
+          </Text>
+        </View>
+        <View style={bannerStyles.arrow}>
+          <Text style={bannerStyles.arrowText}>→</Text>
+        </View>
+      </View>
+
+    </TouchableOpacity>
+  )
+}
+
+const bannerStyles = StyleSheet.create({
+  container: {
+    backgroundColor: BRAND,
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 14,
+    overflow: 'hidden',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  // decorative background circles
+  circle1: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    top: -30,
+    right: -20,
+  },
+  circle2: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    bottom: -15,
+    left: 60,
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 16,
+  },
+  iconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  icon: { fontSize: 28 },
+  textBlock: { flex: 1 },
+  title: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.80)',
+    lineHeight: 17,
+  },
+  arrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+
+})
 
 // ── Calorie Ring ───────────────────────────────────────────────────
 function CalorieRing({ consumed, goal }: { consumed: number; goal: number }) {
@@ -223,6 +328,9 @@ export default function Home() {
           </View>
         </View>
 
+        {/* ── KI-Analyse Banner ─────────────────────────────────── */}
+        <AIAnalysisBanner />
+
         {/* ── Kalorien-Karte ────────────────────────────────────── */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🔥 Kalorien heute</Text>
@@ -301,20 +409,7 @@ export default function Home() {
           )}
         </View>
 
-        {/* ── Schnellzugriff ────────────────────────────────────── */}
-        <Text style={styles.sectionLabel}>Schnellzugriff</Text>
-        <TouchableOpacity
-          style={styles.scanBtn}
-          onPress={() => setShowBloodModal(true)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.scanBtnIcon}>🩸</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.scanBtnTitle}>Blutwerte eintragen</Text>
-            <Text style={styles.scanBtnSub}>Manuell oder per Foto-Scan</Text>
-          </View>
-          <Text style={styles.scanBtnArrow}>→</Text>
-        </TouchableOpacity>
+
       </ScrollView>
 
       {/* ── Modal: Blutwerte hinzufügen ───────────────────────────── */}
@@ -339,7 +434,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   greeting: {
     fontSize: 22,
