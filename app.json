@@ -12,6 +12,7 @@
       "bundleIdentifier": "de.thws.blutwerte"
     },
     "android": {
+      "package": "de.thws.blutwerte",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

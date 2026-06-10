@@ -89,7 +89,6 @@ export default function Analysis() {
       const analysisResult = await analyzeHealthData({
         ...data,
         profile: {
-          name: profile.name,
           gender: profile.gender,
           birthYear: profile.birthYear,
           cyclePhase: profile.cyclePhase,

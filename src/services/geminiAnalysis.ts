@@ -1,6 +1,7 @@
 // src/services/geminiAnalysis.ts
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { app } from '../config/firebase'
+import { BLOOD_VALUES } from '../constants/bloodValues'
 
 const functions = getFunctions(app, 'europe-west1')
 
@@ -10,7 +11,6 @@ export interface AnalysisInput {
   supplements: any[]
   training: any[]
   profile: {
-    name: string
     gender: string | null
     birthYear: number | null
     cyclePhase: string
@@ -32,14 +32,30 @@ export async function analyzeHealthData(input: AnalysisInput): Promise<AnalysisR
 
   const latestBloodTest = bloodTests[0]
   const age = profile.birthYear ? new Date().getFullYear() - profile.birthYear : null
+  const gender = profile.gender ?? 'all'
 
-  // Blutwerte MIT Richtgrenzen formatieren damit KI die Abweichung beurteilen kann
+  // Blutwerte MIT Richtgrenzen formatieren – Referenzbereiche zur Laufzeit
+  // aus BLOOD_VALUES nachschlagen (wie history.tsx), NICHT aus Firestore lesen
   const formattedBloodValues = latestBloodTest
     ? Object.entries(latestBloodTest.values || {}).map(([key, val]: [string, any]) => {
-        const ref = val.refMin != null && val.refMax != null
-          ? ` (Richtgrenze: ${val.refMin}–${val.refMax} ${val.unit})`
+        // Referenzbereich aus dem zentralen Katalog laden
+        const def = BLOOD_VALUES.find(bv => bv.id === key)
+        const refRange = def?.referenceRanges?.[gender as 'male' | 'female']
+          ?? def?.referenceRanges?.all
+
+        const refMin = refRange?.min
+        const refMax = refRange?.max
+        const numericValue = typeof val.value === 'number' ? val.value : parseFloat(val.value)
+
+        // Abweichung selbst berechnen statt aus Firestore zu lesen
+        const isLow = refMin != null && !isNaN(numericValue) && numericValue < refMin
+        const isHigh = refMax != null && !isNaN(numericValue) && numericValue > refMax
+
+        const ref = refMin != null && refMax != null
+          ? ` (Richtgrenze: ${refMin}–${refMax} ${val.unit})`
           : ''
-        const flag = val.isLow ? ' ⬇ UNTER Referenz' : val.isHigh ? ' ⬆ ÜBER Referenz' : ' ✓ normal'
+        const flag = isLow ? ' ⬇ UNTER Referenz' : isHigh ? ' ⬆ ÜBER Referenz' : ' ✓ normal'
+
         return `${key}: ${val.value} ${val.unit}${ref}${flag}`
       }).join('\n')
     : 'Keine Blutwerte'
