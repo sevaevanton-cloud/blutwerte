@@ -8,6 +8,7 @@ import {
   ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { db } from '../config/firebase'
 import { BRAND, BRAND_DARK, BRAND_LIGHT } from '../constants/theme'
 import { useAuth } from '../context/AuthContext'
@@ -35,6 +36,75 @@ const SUPP_TIMES = [
   { id: 'midday',  label: '☀️ Mittags' },
   { id: 'evening', label: '🌆 Abends' },
   { id: 'night',   label: '🌙 Nachts' },
+]
+
+// ─── Häufige Supplements (Autocomplete) ──────────────────────────────────────
+const COMMON_SUPPLEMENTS = [
+  '5-HTP',
+  'Alpha-Liponsäure',
+  'Ashwagandha',
+  'Astaxanthin',
+  'BCAA',
+  'Ballaststoffe',
+  'Beta-Alanin',
+  'Biotin (Vitamin H)',
+  'Cholin',
+  'Chondroitin',
+  'Chlorella',
+  'Chrom',
+  'Coenzym Q10 (CoQ10)',
+  'Creatin',
+  'Eisen',
+  'Elektrolyte',
+  'Fischöl',
+  'Folsäure',
+  'Ginseng',
+  'Glucosamin',
+  'Hyaluronsäure',
+  'Ingwer',
+  'Jod',
+  'Kalium',
+  'Kalzium',
+  'Kollagen',
+  'Kupfer',
+  'Kurkuma (Curcumin)',
+  'L-Arginin',
+  'L-Carnitin',
+  'L-Glutamin',
+  'L-Theanin',
+  'L-Tryptophan',
+  'Lutein',
+  'Lycopin',
+  'Maca',
+  'Magnesium',
+  'Mangan',
+  'Melatonin',
+  'Molybdän',
+  'Moringa',
+  'MSM',
+  'Niacin (Vitamin B3)',
+  'Omega-3 Fettsäuren',
+  'Phosphatidylserin',
+  'Präbiotika',
+  'Probiotika',
+  'Quercetin',
+  'Resveratrol',
+  'Rhodiola rosea',
+  'Riboflavin (Vitamin B2)',
+  'Schwarzkümmelöl',
+  'Selen',
+  'Spirulina',
+  'Thiamin (Vitamin B1)',
+  'Vitamin A',
+  'Vitamin B12',
+  'Vitamin B6',
+  'Vitamin C',
+  'Vitamin D3',
+  'Vitamin E',
+  'Vitamin K2 (MK-7)',
+  'Whey Protein',
+  'Zeaxanthin',
+  'Zink',
 ]
 
 interface OnboardingSupplement {
@@ -94,7 +164,6 @@ function KFASlider({
   const cat = getKfaCategory(kfa, gender)
   const fillRatio = Math.max(0, Math.min(1, (kfa - min) / (max - min)))
 
-  // KFA-Referenzbereiche als Markierungen
   const ranges = gender === 'male'
     ? [
         { pct: 0,    label: `${min}%` },
@@ -113,7 +182,6 @@ function KFASlider({
 
   return (
     <View style={kfaStyles.wrapper}>
-      {/* KFA-Anzeige */}
       <View style={kfaStyles.header}>
         <View>
           <Text style={[kfaStyles.kfaValue, { color: cat.color }]}>{kfa}%<Text style={kfaStyles.kfaUnit}> KFA</Text></Text>
@@ -124,28 +192,22 @@ function KFASlider({
         </View>
       </View>
 
-      {/* Slider-Track */}
       <View style={kfaStyles.sliderContainer}>
         <View
           style={kfaStyles.track}
           onLayout={e => { trackWidthRef.current = e.nativeEvent.layout.width }}
           {...panResponder.panHandlers}
         >
-          {/* Hintergrund-Gradient (simuliert durch farbige Bereiche) */}
           <View style={[kfaStyles.trackBg, { backgroundColor: cat.color + '30' }]} />
-          {/* Fill */}
           <View style={[kfaStyles.fill, {
             width: `${Math.max(2, fillRatio * 100)}%` as any,
             backgroundColor: cat.color,
           }]} />
-          {/* Thumb */}
           <View style={[kfaStyles.thumb, {
             left: `${Math.max(0, Math.min(fillRatio * 100, 94))}%` as any,
             borderColor: cat.color,
           }]} />
         </View>
-
-        {/* Labels */}
         <View style={kfaStyles.labelRow}>
           {ranges.map((r, i) => (
             <Text
@@ -159,7 +221,6 @@ function KFASlider({
         </View>
       </View>
 
-      {/* ± Feinsteuerung */}
       <View style={kfaStyles.fineRow}>
         <TouchableOpacity
           style={kfaStyles.fineBtn}
@@ -332,7 +393,6 @@ const ALL_STEPS = [
   'name', 'birthyear', 'gender', 'cycle', 'body_stats', 'activity', 'body_status',
   'supplements_onboarding', 'done',
 ]
-// Schritte, die NICHT im Fortschrittsbalken zählen
 const HIDDEN_STEPS = new Set(['welcome', 'goal', 'features', 'done'])
 
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
@@ -349,14 +409,16 @@ export default function Onboarding() {
   const [height, setHeight]         = useState('')
   const [weight, setWeight]         = useState('')
   const [activityLevel, setActivityLevel] = useState<ActivityLevel | null>(null)
-  const [kfa, setKfa]               = useState(18) // KFA in %
+  const [kfa, setKfa]               = useState(18)
 
   // Supplement-Onboarding
-  const [suppName, setSuppName]     = useState('')
-  const [suppDose, setSuppDose]     = useState('')
-  const [suppUnit, setSuppUnit]     = useState('mg')
-  const [suppTime, setSuppTime]     = useState('morning')
-  const [supplements, setSupplements] = useState<OnboardingSupplement[]>([])
+  const [suppName, setSuppName]         = useState('')
+  const [suppDose, setSuppDose]         = useState('')
+  const [suppUnit, setSuppUnit]         = useState('mg')
+  const [suppTime, setSuppTime]         = useState('morning')
+  const [supplements, setSupplements]   = useState<OnboardingSupplement[]>([])
+  // Autocomplete
+  const [suggestions, setSuggestions]   = useState<string[]>([])
 
   const fadeAnim  = useRef(new Animated.Value(1)).current
   const slideAnim = useRef(new Animated.Value(0)).current
@@ -367,7 +429,6 @@ export default function Onboarding() {
 
   const genderKey: 'male' | 'female' = gender === 'female' ? 'female' : 'male'
 
-  // Fortschritt: nur Profil-Schritte zählen
   const profileSteps = effectiveSteps.filter(s => !HIDDEN_STEPS.has(s))
   const currentStep  = effectiveSteps[step]
   const profileStepIndex = profileSteps.indexOf(currentStep)
@@ -389,6 +450,25 @@ export default function Onboarding() {
 
   const goNext = () => animate(() => setStep(s => s + 1))
 
+  // ─── Supplement Autocomplete ───────────────────────────────────────────────
+  const handleSuppNameChange = (text: string) => {
+    setSuppName(text)
+    if (text.trim().length === 0) {
+      setSuggestions([])
+      return
+    }
+    const lower = text.toLowerCase()
+    const filtered = COMMON_SUPPLEMENTS
+      .filter(s => s.toLowerCase().startsWith(lower))
+      .slice(0, 5)
+    setSuggestions(filtered)
+  }
+
+  const selectSuggestion = (s: string) => {
+    setSuppName(s)
+    setSuggestions([])
+  }
+
   const addSupplement = () => {
     if (!suppName.trim()) return
     setSupplements(prev => [...prev, {
@@ -399,6 +479,7 @@ export default function Onboarding() {
     }])
     setSuppName('')
     setSuppDose('')
+    setSuggestions([])
   }
 
   const removeSupplement = (index: number) => {
@@ -406,7 +487,6 @@ export default function Onboarding() {
   }
 
   const handleFinish = async () => {
-    // Profil speichern
     await updateProfile({
       name: name.trim(),
       gender,
@@ -420,7 +500,6 @@ export default function Onboarding() {
       fitnessGoal,
     })
 
-    // Supplements in Firestore speichern
     if (uid && supplements.length > 0) {
       const timeLabel = { morning: 'Morgens', midday: 'Mittags', evening: 'Abends', night: 'Nachts' }
       await Promise.all(
@@ -461,482 +540,498 @@ export default function Onboarding() {
 
   const isLastBeforeDone = currentStep === effectiveSteps[effectiveSteps.length - 2]
 
-  // Fitness-Ziele
   const GOALS: { id: FitnessGoal; emoji: string; title: string; desc: string; color: string }[] = [
-    { id: 'lose_fat',          emoji: '🔥', title: 'Körperfett verlieren',   desc: 'Gesund abnehmen & Fett reduzieren',         color: '#f87171' },
-    { id: 'build_muscle',      emoji: '💪', title: 'Muskeln aufbauen',        desc: 'Muskelmasse & Kraft steigern',               color: '#84a7ff' },
-    { id: 'improve_health',    emoji: '❤️', title: 'Gesundheit verbessern',   desc: 'Blutwerte & Vitalwerte optimieren',          color: '#34d399' },
-    { id: 'boost_performance', emoji: '⚡', title: 'Leistung steigern',       desc: 'Sport- & Alltagsperformance maximieren',     color: '#fbbf24' },
-    { id: 'maintain',          emoji: '⚖️', title: 'Gewicht & Gesundheit halten', desc: 'Aktuellen Stand erhalten & festigen',   color: '#a78bfa' },
+    { id: 'lose_fat',          emoji: '🔥', title: 'Körperfett verlieren',       desc: 'Gesund abnehmen & Fett reduzieren',         color: '#f87171' },
+    { id: 'build_muscle',      emoji: '💪', title: 'Muskeln aufbauen',            desc: 'Muskelmasse & Kraft steigern',               color: '#84a7ff' },
+    { id: 'improve_health',    emoji: '❤️', title: 'Gesundheit verbessern',       desc: 'Blutwerte & Vitalwerte optimieren',          color: '#34d399' },
+    { id: 'boost_performance', emoji: '⚡', title: 'Leistung steigern',           desc: 'Sport- & Alltagsperformance maximieren',     color: '#fbbf24' },
+    { id: 'maintain',          emoji: '⚖️', title: 'Gewicht & Gesundheit halten', desc: 'Aktuellen Stand erhalten & festigen',       color: '#a78bfa' },
   ]
 
+  // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Fortschrittsbalken – nur für Profil-Schritte */}
-        {!HIDDEN_STEPS.has(currentStep) && (
-          <View style={styles.progressContainer}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-            </View>
-            <Text style={styles.progressText}>
-              {profileStepIndex + 1} / {profileSteps.length}
-            </Text>
-          </View>
-        )}
-
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], flex: 1 }}>
-
-          {/* ── Welcome ── */}
-          {currentStep === 'welcome' && (
-            <View style={styles.centerContent}>
-              <Text style={styles.bigEmoji}>🩸</Text>
-              <Text style={styles.welcomeTitle}>Willkommen bei{'\n'}Blutwerte</Text>
-              <Text style={styles.welcomeSubtitle}>
-                Deine persönliche App für Blutwerte, Ernährung und Gesundheitsanalyse.
-                {'\n\n'}In wenigen Schritten richten wir alles für dich ein.
-              </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={goNext}>
-                <Text style={styles.primaryBtnText}>Los geht's →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ── Ziel ── */}
-          {currentStep === 'goal' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>🎯</Text>
-              <Text style={styles.stepTitle}>Was ist dein Ziel?</Text>
-              <Text style={styles.stepSubtitle}>
-                Dein Hauptziel hilft uns, die KI-Analyse und Empfehlungen gezielt auf dich anzupassen.
-              </Text>
-              <View style={goalStyles.grid}>
-                {GOALS.map(g => (
-                  <TouchableOpacity
-                    key={g.id}
-                    style={[
-                      goalStyles.card,
-                      fitnessGoal === g.id && { borderColor: g.color, backgroundColor: g.color + '12' },
-                    ]}
-                    onPress={() => setFitnessGoal(g.id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[goalStyles.iconWrap, { backgroundColor: g.color + '20' }]}>
-                      <Text style={goalStyles.icon}>{g.emoji}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[goalStyles.title, fitnessGoal === g.id && { color: g.color }]}>
-                        {g.title}
-                      </Text>
-                      <Text style={goalStyles.desc}>{g.desc}</Text>
-                    </View>
-                    <View style={[styles.radio, fitnessGoal === g.id && { borderColor: g.color }]}>
-                      {fitnessGoal === g.id && <View style={[styles.radioDot, { backgroundColor: g.color }]} />}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+    // ✅ SafeAreaView edges={['top']} → Dynamic Island wird ausgespart
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f8fc' }} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Fortschrittsbalken – sichtbar oberhalb Dynamic Island dank SafeAreaView */}
+          {!HIDDEN_STEPS.has(currentStep) && (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
               </View>
-            </View>
-          )}
-
-          {/* ── Features ── */}
-          {currentStep === 'features' && <FeaturesStep />}
-
-          {/* ── Name ── */}
-          {currentStep === 'name' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>👤</Text>
-              <Text style={styles.stepTitle}>Wie heißt du?</Text>
-              <Text style={styles.stepSubtitle}>Dein Name wird für die persönliche Begrüßung verwendet.</Text>
-              <TextInput
-                style={styles.bigInput}
-                value={name}
-                onChangeText={setName}
-                placeholder="Dein Name"
-                placeholderTextColor="#9ca3af"
-                autoFocus
-                returnKeyType="next"
-                onSubmitEditing={() => canProceed() && goNext()}
-              />
-            </View>
-          )}
-
-          {/* ── Geburtsjahr ── */}
-          {currentStep === 'birthyear' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>🎂</Text>
-              <Text style={styles.stepTitle}>Geburtsjahr</Text>
-              <Text style={styles.stepSubtitle}>
-                Wird für altersabhängige Referenzwerte und deine Kalorienberechnung benötigt.
-                {'\n'}Drehe das Rad auf dein Geburtsjahr.
+              <Text style={styles.progressText}>
+                {profileStepIndex + 1} / {profileSteps.length}
               </Text>
-              <View style={styles.pickerCard}>
-                <Text style={styles.pickerLabel}>GEBURTSJAHR</Text>
-                <DateTimePicker
-                  value={birthDate}
-                  mode="date"
-                  display="spinner"
-                  onChange={(_, d) => { if (d) setBirthDate(d) }}
-                  minimumDate={MIN_BIRTH_DATE}
-                  maximumDate={MAX_BIRTH_DATE}
-                  locale="de-DE"
-                  style={styles.datePicker}
-                  textColor="#1a1a2e"
-                />
-                <Text style={styles.pickerHint}>
-                  Nur das Jahr wird gespeichert – Tag und Monat sind irrelevant.
+            </View>
+          )}
+
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], flex: 1 }}>
+
+            {/* ── Welcome ── */}
+            {currentStep === 'welcome' && (
+              <View style={styles.centerContent}>
+                <Text style={styles.bigEmoji}>🩸</Text>
+                <Text style={styles.welcomeTitle}>Willkommen bei{'\n'}Blutwerte</Text>
+                <Text style={styles.welcomeSubtitle}>
+                  Deine persönliche App für Blutwerte, Ernährung und Gesundheitsanalyse.
+                  {'\n\n'}In wenigen Schritten richten wir alles für dich ein.
                 </Text>
-              </View>
-            </View>
-          )}
-
-          {/* ── Geschlecht ── */}
-          {currentStep === 'gender' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>⚧</Text>
-              <Text style={styles.stepTitle}>Biologisches Geschlecht</Text>
-              <Text style={styles.stepSubtitle}>
-                Wichtig für korrekte Referenzwerte – z.B. unterscheiden sich Hämoglobin-Werte zwischen Männern und Frauen.
-              </Text>
-              <View style={styles.genderOptions}>
-                {[
-                  { id: 'male',    emoji: '♂', label: 'Männlich', desc: 'Männliche Referenzwerte' },
-                  { id: 'female',  emoji: '♀', label: 'Weiblich', desc: 'Weibliche Referenzwerte + Zyklus' },
-                  { id: 'diverse', emoji: '⚧', label: 'Divers',   desc: 'Allgemeine Referenzwerte' },
-                ].map(g => (
-                  <TouchableOpacity
-                    key={g.id}
-                    style={[styles.genderCard, gender === g.id && styles.genderCardActive]}
-                    onPress={() => {
-                      setGender(g.id as Gender)
-                      // KFA-Standardwert je Geschlecht setzen
-                      setKfa(g.id === 'female' ? 25 : 18)
-                    }}
-                  >
-                    <Text style={styles.genderEmoji}>{g.emoji}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.genderLabel, gender === g.id && styles.genderLabelActive]}>{g.label}</Text>
-                      <Text style={styles.genderDesc}>{g.desc}</Text>
-                    </View>
-                    <View style={[styles.radio, gender === g.id && styles.radioActive]}>
-                      {gender === g.id && <View style={styles.radioDot} />}
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* ── Zyklus (nur weiblich) ── */}
-          {currentStep === 'cycle' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>🌙</Text>
-              <Text style={styles.stepTitle}>Zyklusphase</Text>
-              <Text style={styles.stepSubtitle}>
-                Hormone wie Östrogen, Progesteron, LH und FSH variieren je nach Zyklusphase stark.
-              </Text>
-              {CYCLE_PHASES.map(phase => (
-                <TouchableOpacity
-                  key={phase.id}
-                  style={[styles.phaseRow, cyclePhase === phase.id && styles.phaseRowActive]}
-                  onPress={() => setCyclePhase(phase.id)}
-                >
-                  <Text style={[styles.phaseLabel, cyclePhase === phase.id && styles.phaseLabelActive]}>
-                    {phase.label}
-                  </Text>
-                  {phase.days ? <Text style={styles.phaseDays}>{phase.days}</Text> : null}
+                <TouchableOpacity style={styles.primaryBtn} onPress={goNext}>
+                  <Text style={styles.primaryBtnText}>Los geht's →</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* ── Körperdaten (ohne BMI) ── */}
-          {currentStep === 'body_stats' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>📏</Text>
-              <Text style={styles.stepTitle}>Körpermaße</Text>
-              <Text style={styles.stepSubtitle}>
-                Größe und Gewicht werden für dein Kalorienziel und die Analyse benötigt.
-              </Text>
-              <View style={styles.statsRow}>
-                <View style={[styles.statsCard, { flex: 1 }]}>
-                  <Text style={styles.statsCardLabel}>KÖRPERGRÖSSE</Text>
-                  <View style={styles.statsInputRow}>
-                    <TextInput
-                      style={[styles.bigInput, { flex: 1, textAlign: 'center' }]}
-                      value={height}
-                      onChangeText={setHeight}
-                      placeholder="175"
-                      placeholderTextColor="#9ca3af"
-                      keyboardType="decimal-pad"
-                      maxLength={5}
-                    />
-                    <Text style={styles.unitLabel}>cm</Text>
-                  </View>
-                </View>
-                <View style={[styles.statsCard, { flex: 1 }]}>
-                  <Text style={styles.statsCardLabel}>KÖRPERGEWICHT</Text>
-                  <View style={styles.statsInputRow}>
-                    <TextInput
-                      style={[styles.bigInput, { flex: 1, textAlign: 'center' }]}
-                      value={weight}
-                      onChangeText={setWeight}
-                      placeholder="75"
-                      placeholderTextColor="#9ca3af"
-                      keyboardType="decimal-pad"
-                      maxLength={5}
-                    />
-                    <Text style={styles.unitLabel}>kg</Text>
-                  </View>
-                </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* ── Aktivität ── */}
-          {currentStep === 'activity' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>🏃</Text>
-              <Text style={styles.stepTitle}>Aktivitätslevel</Text>
-              <Text style={styles.stepSubtitle}>
-                Wie aktiv bist du im Alltag? Das bestimmt deinen täglichen Kalorienbedarf.
-              </Text>
-              {ACTIVITY_LEVELS.map(level => (
-                <TouchableOpacity
-                  key={level.id}
-                  style={[styles.phaseRow, activityLevel === level.id && styles.phaseRowActive]}
-                  onPress={() => setActivityLevel(level.id)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.phaseLabel, activityLevel === level.id && styles.phaseLabelActive]}>
-                      {level.label}
-                    </Text>
-                    <Text style={styles.phaseDays}>{level.desc}</Text>
-                  </View>
-                  {activityLevel === level.id && <Text style={{ color: BRAND, fontWeight: '800' }}>✓</Text>}
-                </TouchableOpacity>
-              ))}
-              {activityLevel && previewTDEE && (
-                <View style={styles.tdeePreview}>
-                  <Text style={styles.tdeePreviewLabel}>Geschätzter Kalorienbedarf</Text>
-                  <Text style={styles.tdeePreviewValue}>{previewTDEE.toLocaleString('de-DE')} kcal / Tag</Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* ── Körperfettanteil (KFA-Slider) ── */}
-          {currentStep === 'body_status' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>🪞</Text>
-              <Text style={styles.stepTitle}>Körperfettanteil</Text>
-              <Text style={styles.stepSubtitle}>
-                Schätze deinen aktuellen KFA ein. Das ist aussagekräftiger als der BMI
-                und wird direkt in der KI-Analyse berücksichtigt.
-              </Text>
-
-              <View style={kfaStepStyles.card}>
-                <KFASlider
-                  kfa={kfa}
-                  onChange={setKfa}
-                  gender={genderKey}
-                />
-              </View>
-
-              {/* Referenz-Tabelle */}
-              <View style={kfaStepStyles.refBox}>
-                <Text style={kfaStepStyles.refTitle}>
-                  Referenzwerte ({genderKey === 'male' ? 'Männer' : 'Frauen'})
+            {/* ── Ziel ── */}
+            {currentStep === 'goal' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>🎯</Text>
+                <Text style={styles.stepTitle}>Was ist dein Ziel?</Text>
+                <Text style={styles.stepSubtitle}>
+                  Dein Hauptziel hilft uns, die KI-Analyse und Empfehlungen gezielt auf dich anzupassen.
                 </Text>
-                {(genderKey === 'male'
-                  ? [
-                      { range: '4–8%',   label: 'Wettkampf-Form', color: '#93c5fd' },
-                      { range: '9–13%',  label: 'Athletisch',     color: '#34d399' },
-                      { range: '14–17%', label: 'Fit & Schlank',  color: '#4ade80' },
-                      { range: '18–24%', label: 'Normalbereich',  color: '#a3e635' },
-                      { range: '25–30%', label: 'Erhöht',         color: '#fbbf24' },
-                      { range: '> 30%',  label: 'Hoch',           color: '#f87171' },
-                    ]
-                  : [
-                      { range: '13–17%', label: 'Wettkampf-Form', color: '#93c5fd' },
-                      { range: '18–22%', label: 'Athletisch',     color: '#34d399' },
-                      { range: '23–28%', label: 'Fit & Schlank',  color: '#4ade80' },
-                      { range: '29–35%', label: 'Normalbereich',  color: '#a3e635' },
-                      { range: '36–40%', label: 'Erhöht',         color: '#fbbf24' },
-                      { range: '> 40%',  label: 'Hoch',           color: '#f87171' },
-                    ]
-                ).map(r => (
-                  <View key={r.range} style={kfaStepStyles.refRow}>
-                    <View style={[kfaStepStyles.refDot, { backgroundColor: r.color }]} />
-                    <Text style={kfaStepStyles.refRange}>{r.range}</Text>
-                    <Text style={kfaStepStyles.refLabel}>{r.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* ── Supplements Onboarding ── */}
-          {currentStep === 'supplements_onboarding' && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepEmoji}>💊</Text>
-              <Text style={styles.stepTitle}>Aktuelle Supplements</Text>
-              <Text style={styles.stepSubtitle}>
-                Trägst du Supplements direkt ein, werden sie heute noch in der KI-Analyse berücksichtigt
-                und erscheinen im täglichen Tracker zum Abhaken.
-              </Text>
-
-              {/* Eingabe */}
-              <View style={suppStyles.formCard}>
-                <Text style={suppStyles.formLabel}>SUPPLEMENT HINZUFÜGEN</Text>
-                <TextInput
-                  style={styles.bigInput}
-                  value={suppName}
-                  onChangeText={setSuppName}
-                  placeholder="Name (z.B. Vitamin D3, Magnesium, …)"
-                  placeholderTextColor="#9ca3af"
-                  returnKeyType="next"
-                />
-                <View style={suppStyles.doseRow}>
-                  <TextInput
-                    style={[styles.bigInput, { flex: 1 }]}
-                    value={suppDose}
-                    onChangeText={setSuppDose}
-                    placeholder="Dosierung"
-                    placeholderTextColor="#9ca3af"
-                    keyboardType="decimal-pad"
-                    maxLength={8}
-                  />
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={suppStyles.unitScroll}>
-                    <View style={suppStyles.unitRow}>
-                      {SUPP_UNITS.map(u => (
-                        <TouchableOpacity
-                          key={u}
-                          style={[suppStyles.unitChip, suppUnit === u && suppStyles.unitChipActive]}
-                          onPress={() => setSuppUnit(u)}
-                        >
-                          <Text style={[suppStyles.unitChipText, suppUnit === u && suppStyles.unitChipTextActive]}>
-                            {u}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </View>
-
-                {/* Zeitauswahl */}
-                <View style={suppStyles.timeRow}>
-                  {SUPP_TIMES.map(t => (
+                <View style={goalStyles.grid}>
+                  {GOALS.map(g => (
                     <TouchableOpacity
-                      key={t.id}
-                      style={[suppStyles.timeChip, suppTime === t.id && suppStyles.timeChipActive]}
-                      onPress={() => setSuppTime(t.id)}
+                      key={g.id}
+                      style={[
+                        goalStyles.card,
+                        fitnessGoal === g.id && { borderColor: g.color, backgroundColor: g.color + '12' },
+                      ]}
+                      onPress={() => setFitnessGoal(g.id)}
+                      activeOpacity={0.8}
                     >
-                      <Text style={[suppStyles.timeChipText, suppTime === t.id && suppStyles.timeChipTextActive]}>
-                        {t.label}
-                      </Text>
+                      <View style={[goalStyles.iconWrap, { backgroundColor: g.color + '20' }]}>
+                        <Text style={goalStyles.icon}>{g.emoji}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[goalStyles.title, fitnessGoal === g.id && { color: g.color }]}>
+                          {g.title}
+                        </Text>
+                        <Text style={goalStyles.desc}>{g.desc}</Text>
+                      </View>
+                      <View style={[styles.radio, fitnessGoal === g.id && { borderColor: g.color }]}>
+                        {fitnessGoal === g.id && <View style={[styles.radioDot, { backgroundColor: g.color }]} />}
+                      </View>
                     </TouchableOpacity>
                   ))}
                 </View>
-
-                <TouchableOpacity
-                  style={[suppStyles.addBtn, !suppName.trim() && suppStyles.addBtnDisabled]}
-                  onPress={addSupplement}
-                  disabled={!suppName.trim()}
-                >
-                  <Text style={suppStyles.addBtnText}>+ Hinzufügen</Text>
-                </TouchableOpacity>
               </View>
+            )}
 
-              {/* Liste hinzugefügter Supplements */}
-              {supplements.length > 0 && (
-                <View style={suppStyles.list}>
-                  {supplements.map((s, i) => (
-                    <View key={i} style={suppStyles.listItem}>
-                      <View style={suppStyles.listDot} />
+            {/* ── Features ── */}
+            {currentStep === 'features' && <FeaturesStep />}
+
+            {/* ── Name ── */}
+            {currentStep === 'name' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>👤</Text>
+                <Text style={styles.stepTitle}>Wie heißt du?</Text>
+                <Text style={styles.stepSubtitle}>Dein Name wird für die persönliche Begrüßung verwendet.</Text>
+                <TextInput
+                  style={styles.bigInput}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Dein Name"
+                  placeholderTextColor="#9ca3af"
+                  autoFocus
+                  returnKeyType="next"
+                  onSubmitEditing={() => canProceed() && goNext()}
+                />
+              </View>
+            )}
+
+            {/* ── Geburtsjahr ── */}
+            {currentStep === 'birthyear' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>🎂</Text>
+                <Text style={styles.stepTitle}>Geburtsjahr</Text>
+                <Text style={styles.stepSubtitle}>
+                  Wird für altersabhängige Referenzwerte und deine Kalorienberechnung benötigt.
+                  {'\n'}Drehe das Rad auf dein Geburtsjahr.
+                </Text>
+                <View style={styles.pickerCard}>
+                  <Text style={styles.pickerLabel}>GEBURTSJAHR</Text>
+                  <DateTimePicker
+                    value={birthDate}
+                    mode="date"
+                    display="spinner"
+                    onChange={(_, d) => { if (d) setBirthDate(d) }}
+                    minimumDate={MIN_BIRTH_DATE}
+                    maximumDate={MAX_BIRTH_DATE}
+                    locale="de-DE"
+                    style={styles.datePicker}
+                    textColor="#1a1a2e"
+                  />
+                  <Text style={styles.pickerHint}>
+                    Nur das Jahr wird gespeichert – Tag und Monat sind irrelevant.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* ── Geschlecht ── */}
+            {currentStep === 'gender' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>⚧</Text>
+                <Text style={styles.stepTitle}>Biologisches Geschlecht</Text>
+                <Text style={styles.stepSubtitle}>
+                  Wichtig für korrekte Referenzwerte – z.B. unterscheiden sich Hämoglobin-Werte zwischen Männern und Frauen.
+                </Text>
+                <View style={styles.genderOptions}>
+                  {[
+                    { id: 'male',    emoji: '♂', label: 'Männlich', desc: 'Männliche Referenzwerte' },
+                    { id: 'female',  emoji: '♀', label: 'Weiblich', desc: 'Weibliche Referenzwerte + Zyklus' },
+                    { id: 'diverse', emoji: '⚧', label: 'Divers',   desc: 'Allgemeine Referenzwerte' },
+                  ].map(g => (
+                    <TouchableOpacity
+                      key={g.id}
+                      style={[styles.genderCard, gender === g.id && styles.genderCardActive]}
+                      onPress={() => {
+                        setGender(g.id as Gender)
+                        setKfa(g.id === 'female' ? 25 : 18)
+                      }}
+                    >
+                      <Text style={styles.genderEmoji}>{g.emoji}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={suppStyles.listName}>{s.name}</Text>
-                        <Text style={suppStyles.listDetail}>
-                          {s.dose ? `${s.dose} ${s.unit} · ` : ''}
-                          {SUPP_TIMES.find(t => t.id === s.time)?.label ?? s.time}
-                        </Text>
+                        <Text style={[styles.genderLabel, gender === g.id && styles.genderLabelActive]}>{g.label}</Text>
+                        <Text style={styles.genderDesc}>{g.desc}</Text>
                       </View>
-                      <TouchableOpacity onPress={() => removeSupplement(i)} style={suppStyles.removeBtn}>
-                        <Text style={suppStyles.removeBtnText}>✕</Text>
-                      </TouchableOpacity>
+                      <View style={[styles.radio, gender === g.id && styles.radioActive]}>
+                        {gender === g.id && <View style={styles.radioDot} />}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ── Zyklus (nur weiblich) ── */}
+            {currentStep === 'cycle' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>🌙</Text>
+                <Text style={styles.stepTitle}>Zyklusphase</Text>
+                <Text style={styles.stepSubtitle}>
+                  Hormone wie Östrogen, Progesteron, LH und FSH variieren je nach Zyklusphase stark.
+                </Text>
+                {CYCLE_PHASES.map(phase => (
+                  <TouchableOpacity
+                    key={phase.id}
+                    style={[styles.phaseRow, cyclePhase === phase.id && styles.phaseRowActive]}
+                    onPress={() => setCyclePhase(phase.id)}
+                  >
+                    <Text style={[styles.phaseLabel, cyclePhase === phase.id && styles.phaseLabelActive]}>
+                      {phase.label}
+                    </Text>
+                    {phase.days ? <Text style={styles.phaseDays}>{phase.days}</Text> : null}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* ── Körperdaten ── */}
+            {currentStep === 'body_stats' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>📏</Text>
+                <Text style={styles.stepTitle}>Körpermaße</Text>
+                <Text style={styles.stepSubtitle}>
+                  Größe und Gewicht werden für dein Kalorienziel und die Analyse benötigt.
+                </Text>
+                <View style={styles.statsRow}>
+                  <View style={[styles.statsCard, { flex: 1 }]}>
+                    <Text style={styles.statsCardLabel}>KÖRPERGRÖSSE</Text>
+                    <View style={styles.statsInputRow}>
+                      <TextInput
+                        style={[styles.bigInput, { flex: 1, textAlign: 'center' }]}
+                        value={height}
+                        onChangeText={setHeight}
+                        placeholder="175"
+                        placeholderTextColor="#9ca3af"
+                        keyboardType="decimal-pad"
+                        maxLength={5}
+                      />
+                      <Text style={styles.unitLabel}>cm</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.statsCard, { flex: 1 }]}>
+                    <Text style={styles.statsCardLabel}>KÖRPERGEWICHT</Text>
+                    <View style={styles.statsInputRow}>
+                      <TextInput
+                        style={[styles.bigInput, { flex: 1, textAlign: 'center' }]}
+                        value={weight}
+                        onChangeText={setWeight}
+                        placeholder="75"
+                        placeholderTextColor="#9ca3af"
+                        keyboardType="decimal-pad"
+                        maxLength={5}
+                      />
+                      <Text style={styles.unitLabel}>kg</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* ── Aktivität ── */}
+            {currentStep === 'activity' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>🏃</Text>
+                <Text style={styles.stepTitle}>Aktivitätslevel</Text>
+                <Text style={styles.stepSubtitle}>
+                  Wie aktiv bist du im Alltag? Das bestimmt deinen täglichen Kalorienbedarf.
+                </Text>
+                {ACTIVITY_LEVELS.map(level => (
+                  <TouchableOpacity
+                    key={level.id}
+                    style={[styles.phaseRow, activityLevel === level.id && styles.phaseRowActive]}
+                    onPress={() => setActivityLevel(level.id)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.phaseLabel, activityLevel === level.id && styles.phaseLabelActive]}>
+                        {level.label}
+                      </Text>
+                      <Text style={styles.phaseDays}>{level.desc}</Text>
+                    </View>
+                    {activityLevel === level.id && <Text style={{ color: BRAND, fontWeight: '800' }}>✓</Text>}
+                  </TouchableOpacity>
+                ))}
+                {activityLevel && previewTDEE && (
+                  <View style={styles.tdeePreview}>
+                    <Text style={styles.tdeePreviewLabel}>Geschätzter Kalorienbedarf</Text>
+                    <Text style={styles.tdeePreviewValue}>{previewTDEE.toLocaleString('de-DE')} kcal / Tag</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ── Körperfettanteil ── */}
+            {currentStep === 'body_status' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>🪞</Text>
+                <Text style={styles.stepTitle}>Körperfettanteil</Text>
+                <Text style={styles.stepSubtitle}>
+                  Schätze deinen aktuellen KFA ein. Das ist aussagekräftiger als der BMI
+                  und wird direkt in der KI-Analyse berücksichtigt.
+                </Text>
+                <View style={kfaStepStyles.card}>
+                  <KFASlider kfa={kfa} onChange={setKfa} gender={genderKey} />
+                </View>
+                <View style={kfaStepStyles.refBox}>
+                  <Text style={kfaStepStyles.refTitle}>
+                    Referenzwerte ({genderKey === 'male' ? 'Männer' : 'Frauen'})
+                  </Text>
+                  {(genderKey === 'male'
+                    ? [
+                        { range: '4–8%',   label: 'Wettkampf-Form', color: '#93c5fd' },
+                        { range: '9–13%',  label: 'Athletisch',     color: '#34d399' },
+                        { range: '14–17%', label: 'Fit & Schlank',  color: '#4ade80' },
+                        { range: '18–24%', label: 'Normalbereich',  color: '#a3e635' },
+                        { range: '25–30%', label: 'Erhöht',         color: '#fbbf24' },
+                        { range: '> 30%',  label: 'Hoch',           color: '#f87171' },
+                      ]
+                    : [
+                        { range: '13–17%', label: 'Wettkampf-Form', color: '#93c5fd' },
+                        { range: '18–22%', label: 'Athletisch',     color: '#34d399' },
+                        { range: '23–28%', label: 'Fit & Schlank',  color: '#4ade80' },
+                        { range: '29–35%', label: 'Normalbereich',  color: '#a3e635' },
+                        { range: '36–40%', label: 'Erhöht',         color: '#fbbf24' },
+                        { range: '> 40%',  label: 'Hoch',           color: '#f87171' },
+                      ]
+                  ).map(r => (
+                    <View key={r.range} style={kfaStepStyles.refRow}>
+                      <View style={[kfaStepStyles.refDot, { backgroundColor: r.color }]} />
+                      <Text style={kfaStepStyles.refRange}>{r.range}</Text>
+                      <Text style={kfaStepStyles.refLabel}>{r.label}</Text>
                     </View>
                   ))}
                 </View>
-              )}
-
-              {supplements.length === 0 && (
-                <Text style={suppStyles.emptyHint}>
-                  Keine Supplements? Einfach überspringen – du kannst sie jederzeit in der App nachtragen.
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* ── Fertig ── */}
-          {currentStep === 'done' && (
-            <View style={styles.centerContent}>
-              <Text style={styles.bigEmoji}>🎉</Text>
-              <Text style={styles.welcomeTitle}>Alles bereit,{'\n'}{name}!</Text>
-              <Text style={styles.welcomeSubtitle}>
-                Dein Profil ist eingerichtet. Du kannst jetzt Blutwerte eintragen und
-                deine erste KI-Analyse starten.
-              </Text>
-              <View style={styles.summaryBox}>
-                {[
-                  ['🎯 Ziel', GOALS.find(g => g.id === fitnessGoal)?.title ?? '–'],
-                  ['👤 Name', name],
-                  ['🎂 Jahrgang', String(birthDate.getFullYear())],
-                  ['⚧ Geschlecht', gender === 'male' ? '♂ Männlich' : gender === 'female' ? '♀ Weiblich' : '⚧ Divers'],
-                  previewTDEE ? ['🔥 Kalorienbedarf', `${previewTDEE.toLocaleString('de-DE')} kcal`] : null,
-                  ['🪞 KFA', `${kfa}% – ${getKfaCategory(kfa, genderKey).label}`],
-                  supplements.length > 0 ? ['💊 Supplements', `${supplements.length} eingetragen`] : null,
-                ].filter((item): item is [string, string] => item !== null).map(([label, value]) => (
-                  <View key={label as string} style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>{label as string}</Text>
-                    <Text style={styles.summaryValue}>{value as string}</Text>
-                  </View>
-                ))}
               </View>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleFinish}>
-                <Text style={styles.primaryBtnText}>App starten 🚀</Text>
+            )}
+
+            {/* ── Supplements Onboarding ── */}
+            {currentStep === 'supplements_onboarding' && (
+              <View style={styles.stepContent}>
+                <Text style={styles.stepEmoji}>💊</Text>
+                <Text style={styles.stepTitle}>Aktuelle Supplements</Text>
+                <Text style={styles.stepSubtitle}>
+                  Trägst du Supplements direkt ein, werden sie heute noch in der KI-Analyse berücksichtigt
+                  und erscheinen im täglichen Tracker zum Abhaken.
+                </Text>
+
+                <View style={suppStyles.formCard}>
+                  <Text style={suppStyles.formLabel}>SUPPLEMENT HINZUFÜGEN</Text>
+
+                  {/* Name-Eingabe mit Autocomplete */}
+                  <View>
+                    <TextInput
+                      style={styles.bigInput}
+                      value={suppName}
+                      onChangeText={handleSuppNameChange}
+                      placeholder="Name (z.B. Vitamin D3, Magnesium, …)"
+                      placeholderTextColor="#9ca3af"
+                      returnKeyType="next"
+                      autoCorrect={false}
+                    />
+                    {/* Vorschlagsliste */}
+                    {suggestions.length > 0 && (
+                      <View style={suppStyles.suggestions}>
+                        {suggestions.map(s => (
+                          <TouchableOpacity
+                            key={s}
+                            style={suppStyles.suggestionItem}
+                            onPress={() => selectSuggestion(s)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={suppStyles.suggestionIcon}>💊</Text>
+                            <Text style={suppStyles.suggestionText}>{s}</Text>
+                          </TouchableOpacity>
+                        ))}
+                        <Text style={suppStyles.suggestionHint}>
+                          Nicht dabei? Einfach weitertippen und manuell hinzufügen.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={suppStyles.doseRow}>
+                    <TextInput
+                      style={[styles.bigInput, { flex: 1 }]}
+                      value={suppDose}
+                      onChangeText={setSuppDose}
+                      placeholder="Dosierung"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="decimal-pad"
+                      maxLength={8}
+                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={suppStyles.unitScroll}>
+                      <View style={suppStyles.unitRow}>
+                        {SUPP_UNITS.map(u => (
+                          <TouchableOpacity
+                            key={u}
+                            style={[suppStyles.unitChip, suppUnit === u && suppStyles.unitChipActive]}
+                            onPress={() => setSuppUnit(u)}
+                          >
+                            <Text style={[suppStyles.unitChipText, suppUnit === u && suppStyles.unitChipTextActive]}>
+                              {u}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
+
+                  <View style={suppStyles.timeRow}>
+                    {SUPP_TIMES.map(t => (
+                      <TouchableOpacity
+                        key={t.id}
+                        style={[suppStyles.timeChip, suppTime === t.id && suppStyles.timeChipActive]}
+                        onPress={() => setSuppTime(t.id)}
+                      >
+                        <Text style={[suppStyles.timeChipText, suppTime === t.id && suppStyles.timeChipTextActive]}>
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[suppStyles.addBtn, !suppName.trim() && suppStyles.addBtnDisabled]}
+                    onPress={addSupplement}
+                    disabled={!suppName.trim()}
+                  >
+                    <Text style={suppStyles.addBtnText}>+ Hinzufügen</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {supplements.length > 0 && (
+                  <View style={suppStyles.list}>
+                    {supplements.map((s, i) => (
+                      <View key={i} style={suppStyles.listItem}>
+                        <View style={suppStyles.listDot} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={suppStyles.listName}>{s.name}</Text>
+                          <Text style={suppStyles.listDetail}>
+                            {s.dose ? `${s.dose} ${s.unit} · ` : ''}
+                            {SUPP_TIMES.find(t => t.id === s.time)?.label ?? s.time}
+                          </Text>
+                        </View>
+                        <TouchableOpacity onPress={() => removeSupplement(i)} style={suppStyles.removeBtn}>
+                          <Text style={suppStyles.removeBtnText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {supplements.length === 0 && (
+                  <Text style={suppStyles.emptyHint}>
+                    Keine Supplements? Einfach überspringen – du kannst sie jederzeit in der App nachtragen.
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {/* ── Fertig ── */}
+            {currentStep === 'done' && (
+              <View style={styles.centerContent}>
+                <Text style={styles.bigEmoji}>🎉</Text>
+                <Text style={styles.welcomeTitle}>Alles bereit,{'\n'}{name}!</Text>
+                <Text style={styles.welcomeSubtitle}>
+                  Dein Profil ist eingerichtet. Du kannst jetzt Blutwerte eintragen und
+                  deine erste KI-Analyse starten.
+                </Text>
+                <View style={styles.summaryBox}>
+                  {[
+                    ['🎯 Ziel', GOALS.find(g => g.id === fitnessGoal)?.title ?? '–'],
+                    ['👤 Name', name],
+                    ['🎂 Jahrgang', String(birthDate.getFullYear())],
+                    ['⚧ Geschlecht', gender === 'male' ? '♂ Männlich' : gender === 'female' ? '♀ Weiblich' : '⚧ Divers'],
+                    previewTDEE ? ['🔥 Kalorienbedarf', `${previewTDEE.toLocaleString('de-DE')} kcal`] : null,
+                    ['🪞 KFA', `${kfa}% – ${getKfaCategory(kfa, genderKey).label}`],
+                    supplements.length > 0 ? ['💊 Supplements', `${supplements.length} eingetragen`] : null,
+                  ].filter((item): item is [string, string] => item !== null).map(([label, value]) => (
+                    <View key={label as string} style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>{label as string}</Text>
+                      <Text style={styles.summaryValue}>{value as string}</Text>
+                    </View>
+                  ))}
+                </View>
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleFinish}>
+                  <Text style={styles.primaryBtnText}>App starten 🚀</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+          </Animated.View>
+
+          {/* Weiter-Button */}
+          {currentStep !== 'welcome' && currentStep !== 'done' && (
+            <View>
+              <TouchableOpacity
+                style={[styles.primaryBtn, !canProceed() && styles.primaryBtnDisabled]}
+                onPress={canProceed() ? goNext : undefined}
+                activeOpacity={canProceed() ? 0.85 : 1}
+              >
+                <Text style={styles.primaryBtnText}>
+                  {isLastBeforeDone ? 'Fertig ✓' : 'Weiter →'}
+                </Text>
               </TouchableOpacity>
+              {(currentStep === 'supplements_onboarding' || currentStep === 'features') && (
+                <TouchableOpacity onPress={goNext} style={styles.skipBtn}>
+                  <Text style={styles.skipBtnText}>Überspringen</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
-
-        </Animated.View>
-
-        {/* Weiter-Button */}
-        {currentStep !== 'welcome' && currentStep !== 'done' && (
-          <View>
-            <TouchableOpacity
-              style={[styles.primaryBtn, !canProceed() && styles.primaryBtnDisabled]}
-              onPress={canProceed() ? goNext : undefined}
-              activeOpacity={canProceed() ? 0.85 : 1}
-            >
-              <Text style={styles.primaryBtnText}>
-                {isLastBeforeDone ? 'Fertig ✓' : 'Weiter →'}
-              </Text>
-            </TouchableOpacity>
-            {/* Überspringen für optionale Schritte */}
-            {(currentStep === 'supplements_onboarding' || currentStep === 'features') && (
-              <TouchableOpacity onPress={goNext} style={styles.skipBtn}>
-                <Text style={styles.skipBtnText}>Überspringen</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   )
 }
 
@@ -1031,15 +1126,6 @@ const goalStyles = StyleSheet.create({
   desc: { fontSize: 12, color: '#9ca3af', lineHeight: 17 },
 })
 
-const bodyStatsStyles = StyleSheet.create({
-  hint: {
-    flexDirection: 'row', backgroundColor: '#f0f9ff', borderRadius: 12,
-    padding: 12, gap: 8, borderWidth: 1, borderColor: '#bae6fd', alignItems: 'flex-start',
-  },
-  hintIcon: { fontSize: 14 },
-  hintText: { flex: 1, fontSize: 12, color: '#0369a1', lineHeight: 18 },
-})
-
 const kfaStepStyles = StyleSheet.create({
   card: {
     backgroundColor: '#fff', borderRadius: 20, padding: 20,
@@ -1063,6 +1149,25 @@ const suppStyles = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#e5e7eb', gap: 12, marginBottom: 16,
   },
   formLabel: { fontSize: 11, fontWeight: '700', color: '#9ca3af', letterSpacing: 1.2, textTransform: 'uppercase' },
+
+  // Autocomplete suggestions
+  suggestions: {
+    backgroundColor: '#fff', borderRadius: 12, borderWidth: 1.5, borderColor: BRAND + '60',
+    marginTop: 4, overflow: 'hidden',
+    shadowColor: BRAND, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+  },
+  suggestionItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
+  },
+  suggestionIcon: { fontSize: 16 },
+  suggestionText: { fontSize: 15, color: '#1a1a2e', fontWeight: '500' },
+  suggestionHint: {
+    fontSize: 11, color: '#9ca3af', textAlign: 'center',
+    paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#f9fafb',
+  },
+
   doseRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   unitScroll: { flex: 1 },
   unitRow: { flexDirection: 'row', gap: 6, paddingRight: 4 },
@@ -1084,8 +1189,7 @@ const suppStyles = StyleSheet.create({
   timeChipTextActive: { color: BRAND_DARK, fontWeight: '700' },
 
   addBtn: {
-    backgroundColor: BRAND, borderRadius: 12, padding: 14,
-    alignItems: 'center',
+    backgroundColor: BRAND, borderRadius: 12, padding: 14, alignItems: 'center',
   },
   addBtnDisabled: { backgroundColor: '#e5e7eb' },
   addBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
